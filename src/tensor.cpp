@@ -98,9 +98,22 @@ shared_ptr<Tensor> Tensor::ones(const vector<int>& shape) {
     return make_shared<Tensor>(shape, one_data.data());
 }
 
+shared_ptr<Tensor> Tensor::random(const vector<int>& shape, float min_val, float max_val) {
+    size_t size = 1;
+    for (const auto& dim : shape) size *= dim;
+    vector<float> random_data(size);
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_real_distribution<> dis(min_val, max_val);
+    for (size_t i = 0; i < size; ++i) {
+        random_data[i] = static_cast<float>(dis(gen));
+    }
+    return make_shared<Tensor>(shape, random_data.data());
+}
 
-// backward functions
 
+
+// we build the topological order of the computation graph
 void build_topo(shared_ptr<Tensor> v, vector<shared_ptr<Tensor>>& topo, unordered_set<Tensor*>& visited){
     if(visited.find(v.get()) == visited.end()){
         visited.insert(v.get());
@@ -112,37 +125,24 @@ void build_topo(shared_ptr<Tensor> v, vector<shared_ptr<Tensor>>& topo, unordere
 
 }
 
+// backward function
 void Tensor::backward() {
- 
     vector<shared_ptr<Tensor>> topo;
     unordered_set<Tensor*> visited;
     
-
+    // we build out topo graph
     build_topo(shared_from_this(), topo, visited);
     
-
+    // we initialize the current gradient to ones
     this->grad = Tensor::ones(this->shape);
-
-    cout << "\n--- ORDEN TOPOLOGICO (Backpropagation) ---" << endl;
-    cout << "El orden debe ser: Nodo Final -> Intermedios -> Entradas (Hojas)" << endl;
     
- 
+    // we go through the graph in reverse topological order
     for (auto it = topo.rbegin(); it != topo.rend(); ++it) {
         shared_ptr<Tensor> t = *it;
-        
-
-        cout << "Procesando nodo: " << t.get() << " | Shape: (";
-        for(size_t i=0; i<t->shape.size(); i++) {
-            cout << t->shape[i] << (i < t->shape.size()-1 ? "," : "");
-        }
-        cout << ")" << endl;
-
-
+        // we apply the backward function
         if (t->_backward) {
             t->_backward();
         }
-        
     }
-    cout << "--- FIN BACKWARD ---\n" << endl;
 }
 

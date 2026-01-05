@@ -3,8 +3,52 @@
 #include <algorithm>
 #include <stdexcept>
 #include <cmath> 
+#include <iostream> // Necesario para cout
 
 using namespace std;
+
+// Unbroadcast function to accumulate gradients correctly
+void unbroadcast(shared_ptr<Tensor> param, shared_ptr<Tensor> incoming_grad) {
+
+    float* p_data = param->grad->getData(); // Buffer to accumulate gradients
+    float* g_data = incoming_grad->getData(); // Incoming gradient data that needs to be unbroadcasted
+
+    const auto& p_shape = param->shape;
+    const auto& p_strides = param->strides;
+    const auto& g_shape = incoming_grad->shape;
+   
+    int g_dims = g_shape.size();
+    int p_dims = p_shape.size();
+    int dim_diff = g_dims - p_dims; 
+
+    // Coordinates of the incoming gradient
+    vector<int> g_coords(g_dims, 0); // ex: if g_dims = 3, g_coords = {0,0,0}
+
+    size_t total = incoming_grad->getSize();
+
+    for (size_t idx = 0; idx < total; idx++) {
+
+        // we calculate the offset
+        int p_offset = 0;
+        for (int j = 0; j < p_dims; j++) { // we iterate each dimension of the original gradient
+            int g_j = j + dim_diff;        // we look up the corresponding dimension in the incoming gradient
+            // if the parameter shape in this dimension is 1, we always take coordinate 0 (broadcasted)
+            int coord = (p_shape[j] == 1) ? 0 : g_coords[g_j];
+            p_offset += coord * p_strides[j];
+        }
+
+        // we accumulate the gradient
+        p_data[p_offset] += g_data[idx];
+
+        // We increment like an odometer ex for 3D: (0,0,0) -> (0,0,1)
+        for (int d = g_dims - 1; d >= 0; d--) {
+            g_coords[d]++;
+            if (g_coords[d] < g_shape[d]) break;
+            g_coords[d] = 0;
+        }
+    }
+}
+
 
 
 Tensor dot_scalar_product(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
@@ -76,6 +120,7 @@ Tensor matrix_matrix_product(shared_ptr<Tensor> m, shared_ptr<Tensor> v) {
             output_data[i * col_v + j] = sum;
         }
     }
+    
     return Tensor(output_shape, output_data.data(), {m,v});
 }
 
@@ -83,8 +128,9 @@ Tensor batch_matrix_product(shared_ptr<Tensor> b, shared_ptr<Tensor> m) {
     int b_batch = b->getShape().at(0);
     int m_col = m->getShape().at(1);
     int b_row = b->getShape().at(1);
-    vector<int> output_shape = {b_batch, b_row};
-    if (m_col != 1) output_shape.push_back(m_col);
+
+    vector<int> output_shape = {b_batch, b_row,m_col};
+
     vector<float> output_data(product(output_shape));
     for (int i = 0; i < b_batch; i++) {
         auto matrix_batch_i = b->getBatch(i);
@@ -154,7 +200,6 @@ Tensor batch_batch_product(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
     return Tensor(output_shape, output_data.data(), {a,b});
 }
 
--
 shared_ptr<Tensor> operator+(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
 
     auto a_view = a->view_to_3d();
@@ -199,8 +244,8 @@ shared_ptr<Tensor> operator+(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
         if (!b->grad) b->grad = Tensor::zeros(b->shape);
 
 
-        a->grad = a->grad + result->grad; 
-        b->grad = b->grad + result->grad;
+        unbroadcast(a, result->grad);
+        unbroadcast(b, result->grad);
     };
 
     return result;
@@ -237,8 +282,12 @@ shared_ptr<Tensor> relu(shared_ptr<Tensor> a){
     return result;
 }
 
+std::shared_ptr<Tensor> linear_activation(std::shared_ptr<Tensor> x) {
+    return x;
+}
 
-shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
+
+shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b, bool require_grad) {
     shared_ptr<Tensor> result;
 
     if (a->getDimension() == 1 && b->getDimension() == 1) result = make_shared<Tensor> (dot_scalar_product(a, b));
@@ -277,55 +326,174 @@ shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
 
 
     result->_backward = [a, b, result]() {
-
         if (!a->grad) a->grad = Tensor::zeros(a->shape);
         if (!b->grad) b->grad = Tensor::zeros(b->shape);
-
         auto grad_output = result->grad;
         
-        // dA = grad_output @ B.T
+        // 1. Gradiente respecto a A (Input): dA = Grad @ B.T
+        // Matriz (Batch, Out) @ (Out, In) -> (Batch, In)
         auto b_T = transpose_view(b);
-        auto da = matmul(grad_output, b_T);
-        a->grad = a->grad + da;
+        auto da = matmul(grad_output, b_T,false);
+        unbroadcast(a, da);
 
-        // dB = A.T @ grad_output
-        auto a_T = transpose_view(a);
-        auto db = matmul(a_T, grad_output);
-        b->grad = b->grad + db;
+        // 2. Gradiente respecto a B (Pesos): dB = Grad.T @ A
+        // CAMBIO CRÍTICO: Usamos Grad.T @ A en lugar de A.T @ Grad
+        // Matriz (Out, Batch) @ (Batch, In) -> (Out, In)
+        auto grad_T = transpose_view(grad_output);
+        auto db = matmul(grad_T, a,false);
+        
+        // Ahora db tiene forma (Out, In), igual que b.
+        // unbroadcast funcionará perfecto sin hacks de memoria.
+        unbroadcast(b, db);
     };
 
     return result;
 }
 
+
+// Transpose operation
 shared_ptr<Tensor> transpose_view(shared_ptr<Tensor> a) {
 
-    auto result = make_shared<Tensor>(*a);
-    
-
-    if (a->getDimension() == 2) {
-        std::swap(result->shape[0], result->shape[1]);
-        std::swap(result->strides[0], result->strides[1]);
-    } 
-    else if (a->getDimension() == 3) {
-        std::swap(result->shape[1], result->shape[2]);
-        std::swap(result->strides[1], result->strides[2]);
-    } 
-    else {
-        throw std::runtime_error("transpose_view: Dimensiones no soportadas");
-    }
-
-
+    auto result = make_shared<Tensor>(*a); 
+    result->grad = nullptr;
     result->childs = {a};
 
-    // Y = X.T -> dL/dX = (dL/dY).T
+    int dims = a->getDimension();
+
+    if (dims == 2) {
+        // If 2D, swap rows and columns
+        std::swap(result->shape[0], result->shape[1]);
+        std::swap(result->strides[0], result->strides[1]);
+    } else if (dims == 3) {
+        // If 3D, swap the last two dimensions (rows and columns)
+        std::swap(result->shape[1], result->shape[2]);
+        std::swap(result->strides[1], result->strides[2]);
+    } else {
+        throw std::runtime_error("transpose_view: dimensiones no soportadas");
+    }
+
+    // Backward function
     result->_backward = [a, result]() {
         if (!a->grad) a->grad = Tensor::zeros(a->shape);
-        
 
-        auto grad_transposed = transpose_view(result->grad);
-        
-        a->grad = a->grad + grad_transposed;
+        // We transpose the gradient
+        auto grad_T = transpose_view(result->grad);
+
+        // Apply unbroadcast to accumulate gradients correctly in case of broadcasting
+        unbroadcast(a, grad_T);
     };
-    
+
+    return result;
+}
+
+
+
+shared_ptr<Tensor> operator*(shared_ptr<Tensor> a, float scalar) {
+    // Forward
+    vector<float> output_data(product(a->getShape()));
+    float* input_data = a->getData();
+    size_t size = a->getSize();
+
+    for (size_t i = 0; i < size; i++) {
+        output_data[i] = input_data[i] * scalar;
+    }
+
+    auto result = make_shared<Tensor>(a->getShape(), output_data.data(), vector<shared_ptr<Tensor>>{a});
+
+    // Backward: dy/dx = scalar
+    result->_backward = [a, result, scalar]() {
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+
+        float* grad_input = a->grad->getData();
+        float* grad_output = result->grad->getData();
+        size_t size = a->getSize();
+
+        for (size_t i = 0; i < size; i++) {
+            grad_input[i] += grad_output[i] * scalar;
+        }
+    };
+
+    return result;
+}
+
+
+shared_ptr<Tensor> operator-(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
+    return a + (b * -1.0f);
+}
+
+
+std::shared_ptr<Tensor> operator*(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b) {
+
+    if (a->getSize() != b->getSize()) {
+        throw std::runtime_error("Element-wise mul: Tamaños no coinciden");
+    }
+
+    std::vector<float> output_data(a->getSize());
+    float* data_a = a->getData();
+    float* data_b = b->getData();
+    size_t size = a->getSize();
+
+    // Forward: a[i] * b[i]
+    for (size_t i = 0; i < size; i++) {
+        output_data[i] = data_a[i] * data_b[i];
+    }
+
+    auto result = std::make_shared<Tensor>(a->getShape(), output_data.data(), std::vector<std::shared_ptr<Tensor>>{a, b});
+
+    // Backward: Product Rule
+    // si y = a * b
+    // dy/da = b * dy
+    // dy/db = a * dy
+    result->_backward = [a, b, result]() {
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+        if (!b->grad) b->grad = Tensor::zeros(b->shape);
+
+        float* grad_out = result->grad->getData();
+        float* grad_a = a->grad->getData();
+        float* grad_b = b->grad->getData();
+        float* val_a = a->getData();
+        float* val_b = b->getData();
+        size_t sz = a->getSize();
+
+        for (size_t i = 0; i < sz; i++) {
+            grad_a[i] += val_b[i] * grad_out[i];
+            grad_b[i] += val_a[i] * grad_out[i];
+        }
+    };
+
+    return result;
+}
+
+std::shared_ptr<Tensor> operator/(std::shared_ptr<Tensor> a, float scalar) {
+    return a * (1.0f / scalar);
+}
+
+
+shared_ptr<Tensor> sum(shared_ptr<Tensor> a) {
+    float total = 0.0f;
+    float* data = a->getData();
+    size_t size = a->getSize(); 
+
+    for(size_t i = 0; i < size; i++) {
+        total += data[i];
+    }
+
+    vector<float> res_data = {total};
+    auto result = make_shared<Tensor>(vector<int>{1}, res_data.data(), vector<shared_ptr<Tensor>>{a});
+
+
+    result->_backward = [a, result]() {
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+
+        float grad_output = result->grad->getData()[0];
+        
+        float* grad_input = a->grad->getData();
+        size_t n = a->getSize();
+
+        for(size_t i = 0; i < n; i++) {
+            grad_input[i] += grad_output;
+        }
+    };
+
     return result;
 }

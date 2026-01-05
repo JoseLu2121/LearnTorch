@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cassert>
 #include <unordered_set>
+#include <random>
 
 struct Tensor : std::enable_shared_from_this<Tensor> {
 private:
@@ -44,4 +45,5 @@ public:
 
     static std::shared_ptr<Tensor> zeros(const std::vector<int>& shape);
     static std::shared_ptr<Tensor> ones(const std::vector<int>& shape);
+    static std::shared_ptr<Tensor> random(const std::vector<int>& shape, float min_val = -1.0f, float max_val = 1.0f);
 };
