@@ -12,7 +12,7 @@ struct Linear : public Block {
     // Constructor
     Linear(int in_size, int out_size) : Block("Linear") {
         // Shape: (Out,In)
-        W = Tensor::random({out_size, in_size});
+        W = Tensor::random({out_size, in_size},-0.01f,0.01f);
         
         // Shape: (1,Out)
         B = Tensor::zeros({1, out_size});

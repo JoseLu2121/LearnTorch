@@ -18,7 +18,7 @@ void Trainer::fit(std::shared_ptr<Tensor> x_train,
 
     for (int epoch = 0; epoch < epochs; epoch++) {
         
-        // 1. Limpieza
+        // 1. Zero Grad everything
         optimizer->zero_grad();
 
         // 2. Forward

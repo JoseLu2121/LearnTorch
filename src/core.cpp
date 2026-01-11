@@ -10,23 +10,23 @@
 
 using namespace std;
 
-struct Value :  std::enable_shared_from_this<Value>{
+struct Unit :  std::enable_shared_from_this<Unit>{
 
 public:
     double data;
-    vector<shared_ptr<Value>> children;
+    vector<shared_ptr<Unit>> children;
     string label;
     double grad;
     std::function<void()> backward;
 
-    Value(double d, const vector<shared_ptr<Value>>& c = {}, const string& l = "") 
+    Unit(double d, const vector<shared_ptr<Unit>>& c = {}, const string& l = "") 
     : data(d), children(c), label(l), grad(0.0), backward([](){})  // inicializa data y children directamente
     {
         children.reserve(2);   // reserva capacidad para 2 elementos
 
     }
 
-    Value(double d, const string& l)
+    Unit(double d, const string& l)
     : data(d), children({}), label(l), backward([](){}) 
     {
         children.reserve(2);
@@ -35,14 +35,14 @@ public:
 
     std::string toString() const {
         std::ostringstream oss;
-        oss << "Value(label=" << label << ", data=" << data << ", grad=" << grad << ")";
+        oss << "Unit(label=" << label << ", data=" << data << ", grad=" << grad << ")";
         return oss.str();
     }
 
     void backward_total(){
-        std::unordered_set<Value*> visited;
-        vector<Value*> topo;
-        function<void (shared_ptr<Value>)> build_topo = [&](shared_ptr<Value> v) {
+        std::unordered_set<Unit*> visited;
+        vector<Unit*> topo;
+        function<void (shared_ptr<Unit>)> build_topo = [&](shared_ptr<Unit> v) {
             if (visited.find(v.get()) == visited.end()){
                 visited.insert(v.get());
                 for(auto&child : v->children){
@@ -66,8 +66,8 @@ public:
 
 };
 
-shared_ptr<Value> operator+(const shared_ptr<Value>& a, const shared_ptr<Value>& b) {
-    auto out = make_shared<Value>(a->data + b->data, vector<shared_ptr<Value>>{a, b});
+shared_ptr<Unit> operator+(const shared_ptr<Unit>& a, const shared_ptr<Unit>& b) {
+    auto out = make_shared<Unit>(a->data + b->data, vector<shared_ptr<Unit>>{a, b});
     out->backward = [a,b,out] () mutable {
         a->grad += out->grad;
         b->grad += out->grad;
@@ -75,8 +75,8 @@ shared_ptr<Value> operator+(const shared_ptr<Value>& a, const shared_ptr<Value>&
     return out;
 };
 
-shared_ptr<Value> operator*(const shared_ptr<Value>& a, const shared_ptr<Value>& b) {
-    auto out = make_shared<Value>(a->data * b->data, vector<shared_ptr<Value>>{a,b});
+shared_ptr<Unit> operator*(const shared_ptr<Unit>& a, const shared_ptr<Unit>& b) {
+    auto out = make_shared<Unit>(a->data * b->data, vector<shared_ptr<Unit>>{a,b});
     out->backward = [a,b,out] () mutable {
         a->grad += out->grad * b->data;
         b->grad += out->grad * a->data;
@@ -84,8 +84,8 @@ shared_ptr<Value> operator*(const shared_ptr<Value>& a, const shared_ptr<Value>&
     return out;
 };
 
-shared_ptr<Value> operator-(const shared_ptr<Value>& a, const shared_ptr<Value>& b) {
-    auto out = make_shared<Value>(a->data - b->data, vector<shared_ptr<Value>>{a,b});
+shared_ptr<Unit> operator-(const shared_ptr<Unit>& a, const shared_ptr<Unit>& b) {
+    auto out = make_shared<Unit>(a->data - b->data, vector<shared_ptr<Unit>>{a,b});
     out->backward = [a,b,out] () mutable {
         a->grad += out->grad;
         b->grad += -out->grad;
@@ -93,36 +93,36 @@ shared_ptr<Value> operator-(const shared_ptr<Value>& a, const shared_ptr<Value>&
     return out;
 };
 
-shared_ptr<Value> operatorpow(const shared_ptr<Value>& a, const shared_ptr<Value>& b){
-    auto out = make_shared<Value>(pow(a->data,b->data),
-    vector<shared_ptr<Value>>{a,b});
+shared_ptr<Unit> operatorpow(const shared_ptr<Unit>& a, const shared_ptr<Unit>& b){
+    auto out = make_shared<Unit>(pow(a->data,b->data),
+    vector<shared_ptr<Unit>>{a,b});
     out->backward = [a,b,out] () mutable {
         a->grad += b->data * pow(a->data,(b->data - 1)) * out->grad;
     };
     return out;
 }
 
-shared_ptr<Value> operator/(const shared_ptr<Value>& a, const shared_ptr<Value>& b) {
+shared_ptr<Unit> operator/(const shared_ptr<Unit>& a, const shared_ptr<Unit>& b) {
 
 
-    return a* operatorpow(b, make_shared<Value>(-1.0,vector<shared_ptr<Value>> {}));
+    return a* operatorpow(b, make_shared<Unit>(-1.0,vector<shared_ptr<Unit>> {}));
 }
 
 
 
-shared_ptr<Value> relu(const shared_ptr<Value>& a) {
+shared_ptr<Unit> relu(const shared_ptr<Unit>& a) {
     double t = a->data < 0 ? 0.0 : a->data;
 
-    auto out = make_shared<Value>(t, vector<shared_ptr<Value>>{a});
+    auto out = make_shared<Unit>(t, vector<shared_ptr<Unit>>{a});
     out->backward = [a,out] () mutable {
         a->grad += (out->data > 0) ? out->grad : 0.0;
     };
     return out;
 };
 
-shared_ptr<Value> operator_tanh(const shared_ptr<Value>& a) {
+shared_ptr<Unit> operator_tanh(const shared_ptr<Unit>& a) {
     auto output_data = tanh(a->data);
-    auto out = make_shared<Value>(output_data, vector<shared_ptr<Value>>{a});
+    auto out = make_shared<Unit>(output_data, vector<shared_ptr<Unit>>{a});
     out->backward = [a,out] () mutable {
         double t2 = tanh(a->data);
         a->grad += (1 - t2*t2) * out->grad;
@@ -134,24 +134,24 @@ shared_ptr<Value> operator_tanh(const shared_ptr<Value>& a) {
 
 struct Neuron : std::enable_shared_from_this<Neuron> {
     public:
-    vector<shared_ptr<Value>> weights;
-    shared_ptr<Value> bias;
+    vector<shared_ptr<Unit>> weights;
+    shared_ptr<Unit> bias;
     Neuron(int inputs){
         random_device rd;  
         mt19937 gen(rd());  
         uniform_real_distribution<> dist(-1.0, 1.0);
-        bias = make_shared<Value>(1.0, "b");
+        bias = make_shared<Unit>(1.0, "b");
 
         
         for(int i=0;i<inputs;i++){
             double num = dist(gen);
-            auto out = make_shared<Value>(num,"w"+ to_string(i));
+            auto out = make_shared<Unit>(num,"w"+ to_string(i));
             weights.push_back(out);
         };
 
     };
 
-    shared_ptr<Value> compute_neuron(vector<shared_ptr<Value>>& inputs){
+    shared_ptr<Unit> compute_neuron(vector<shared_ptr<Unit>>& inputs){
         auto sum = bias;
 
         for(size_t i = 0; i < inputs.size(); i++){
@@ -162,8 +162,8 @@ struct Neuron : std::enable_shared_from_this<Neuron> {
         return operator_tanh(sum);
     }
 
-    vector<shared_ptr<Value>> parameters(){
-        vector<shared_ptr<Value>> output = {};
+    vector<shared_ptr<Unit>> parameters(){
+        vector<shared_ptr<Unit>> output = {};
         for(auto& weight : weights){
             output.push_back(weight);
         }
@@ -187,8 +187,8 @@ struct Layer : std::enable_shared_from_this<Layer> {
 
     }
 
-    vector<shared_ptr<Value>> compute_layer(vector<shared_ptr<Value>>& inputs){
-        vector<shared_ptr<Value>> out {};
+    vector<shared_ptr<Unit>> compute_layer(vector<shared_ptr<Unit>>& inputs){
+        vector<shared_ptr<Unit>> out {};
         for (auto& neuron : neurons){
             auto activated = neuron->compute_neuron(inputs);
             out.push_back(activated);
@@ -198,8 +198,8 @@ struct Layer : std::enable_shared_from_this<Layer> {
 
     }
 
-    vector<shared_ptr<Value>> parameters(){
-        vector<shared_ptr<Value>> out {};
+    vector<shared_ptr<Unit>> parameters(){
+        vector<shared_ptr<Unit>> out {};
         for(auto& neuron: neurons){
             for(auto& p : neuron->parameters()){
                 out.push_back(p);
@@ -228,8 +228,8 @@ struct MLP : std::enable_shared_from_this<MLP> {
         }
     }
 
-    shared_ptr<Value> compute_mlp(vector<shared_ptr<Value>>& inputs){
-        vector<shared_ptr<Value>> layer_output = inputs;
+    shared_ptr<Unit> compute_mlp(vector<shared_ptr<Unit>>& inputs){
+        vector<shared_ptr<Unit>> layer_output = inputs;
         for (auto& layer : created_layers){
             layer_output = layer->compute_layer(layer_output);
         }
@@ -243,8 +243,8 @@ struct MLP : std::enable_shared_from_this<MLP> {
         }
     }
 
-    vector<shared_ptr<Value>> parameters(){
-        vector<shared_ptr<Value>> out {};
+    vector<shared_ptr<Unit>> parameters(){
+        vector<shared_ptr<Unit>> out {};
         for(auto& l: created_layers){
             for(auto& p : l->parameters()){
                 out.push_back(p); 
@@ -253,12 +253,12 @@ struct MLP : std::enable_shared_from_this<MLP> {
         return out;
     }
 
-    vector<shared_ptr<Value>> fit(vector<vector<shared_ptr<Value>>> inputs,
-        vector<shared_ptr<Value>> targets, int num_iter, double learning_rate){
-        vector<shared_ptr<Value>> output;
+    vector<shared_ptr<Unit>> fit(vector<vector<shared_ptr<Unit>>> inputs,
+        vector<shared_ptr<Unit>> targets, int num_iter, double learning_rate){
+        vector<shared_ptr<Unit>> output;
         for(int i=0; i < num_iter ; i++){
             output = {};
-            shared_ptr<Value> loss_mse_acum = make_shared<Value>(0.0,"loss");
+            shared_ptr<Unit> loss_mse_acum = make_shared<Unit>(0.0,"loss");
             for(size_t j=0; j<targets.size();j++){
                 auto o = this->compute_mlp(inputs.at(j));
                 auto target = targets.at(j);
@@ -267,7 +267,7 @@ struct MLP : std::enable_shared_from_this<MLP> {
                 loss_mse_acum = loss_mse_acum + loss_mse;
                 output.push_back(o);
             }
-            loss_mse_acum = loss_mse_acum / make_shared<Value>(output.size(),vector<shared_ptr<Value>> {});
+            loss_mse_acum = loss_mse_acum / make_shared<Unit>(output.size(),vector<shared_ptr<Unit>> {});
             this->zero_grad();
             loss_mse_acum->backward_total();
             for(auto& p : this->parameters()){
@@ -288,11 +288,11 @@ struct MLP : std::enable_shared_from_this<MLP> {
 
 int main() {
     auto n = Neuron(3);
-    vector<vector<shared_ptr<Value>>> inputs = {{make_shared<Value>(3.0,"x1"),
-    make_shared<Value>(5.0,"x2"),make_shared<Value>(-2.0,"x3")},
-    {make_shared<Value>(5.0,"x1"),
-    make_shared<Value>(-1.0,"x2"),make_shared<Value>(-6.0,"x3")}};
-    vector<shared_ptr<Value>> targets = {make_shared<Value>(0),make_shared<Value>(1)};
+    vector<vector<shared_ptr<Unit>>> inputs = {{make_shared<Unit>(3.0,"x1"),
+    make_shared<Unit>(5.0,"x2"),make_shared<Unit>(-2.0,"x3")},
+    {make_shared<Unit>(5.0,"x1"),
+    make_shared<Unit>(-1.0,"x2"),make_shared<Unit>(-6.0,"x3")}};
+    vector<shared_ptr<Unit>> targets = {make_shared<Unit>(0),make_shared<Unit>(1)};
     auto mlp = MLP(3,{4,1});
     
     auto preds = mlp.fit(inputs,targets,20,0.2);

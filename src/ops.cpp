@@ -51,6 +51,7 @@ void unbroadcast(shared_ptr<Tensor> param, shared_ptr<Tensor> incoming_grad) {
 
 
 
+
 Tensor dot_scalar_product(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
     int size_output = a->getShape().at(0);
     vector<float> output_data(size_output);
@@ -65,7 +66,7 @@ Tensor dot_scalar_product(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
         float val_b = b->getData()[i * stride_b];
         output_data[i] = val_a * val_b;
     }
-    return Tensor({size_output}, output_data.data(), {a,b});
+    return Tensor({size_output}, output_data , {a,b});
 }
 
 
@@ -91,7 +92,7 @@ Tensor vector_matrix_product(shared_ptr<Tensor> v, shared_ptr<Tensor> m) {
         }
         output_data[i] = sum;
     }
-    return Tensor({column_m}, output_data.data(), {v,m});
+    return Tensor({column_m}, output_data , {v,m});
 }
 
 Tensor matrix_matrix_product(shared_ptr<Tensor> m, shared_ptr<Tensor> v) {
@@ -100,7 +101,7 @@ Tensor matrix_matrix_product(shared_ptr<Tensor> m, shared_ptr<Tensor> v) {
     int col_m = m->shape.at(1);
     
     vector<int> output_shape = {row_m, col_v};
-    vector<float> output_data(product(output_shape));
+    vector<float> output_data(element_vector_product(output_shape));
     
 
     int m_stride_0 = m->strides[0];
@@ -121,7 +122,7 @@ Tensor matrix_matrix_product(shared_ptr<Tensor> m, shared_ptr<Tensor> v) {
         }
     }
     
-    return Tensor(output_shape, output_data.data(), {m,v});
+    return Tensor(output_shape, output_data , {m,v});
 }
 
 Tensor batch_matrix_product(shared_ptr<Tensor> b, shared_ptr<Tensor> m) {
@@ -131,14 +132,14 @@ Tensor batch_matrix_product(shared_ptr<Tensor> b, shared_ptr<Tensor> m) {
 
     vector<int> output_shape = {b_batch, b_row,m_col};
 
-    vector<float> output_data(product(output_shape));
+    vector<float> output_data(element_vector_product(output_shape));
     for (int i = 0; i < b_batch; i++) {
         auto matrix_batch_i = b->getBatch(i);
         Tensor matrix_output = matrix_matrix_product(matrix_batch_i, m);
         float* matrix_data = matrix_output.getData();
         copy(matrix_data, matrix_data + b_row * m_col, output_data.begin() + b_row * m_col * i);
     }
-    return Tensor(output_shape, output_data.data(), {b,m});
+    return Tensor(output_shape, output_data , {b,m});
 }
 
 Tensor vector_batch_product(shared_ptr<Tensor> v, shared_ptr<Tensor> b){
@@ -148,14 +149,14 @@ Tensor vector_batch_product(shared_ptr<Tensor> v, shared_ptr<Tensor> b){
     int b_batch = b->shape.at(0);
     int b_col = b->shape.at(2);
     vector<int> output_shape = {b_batch,b_col};
-    vector<float> output_data(product(output_shape));
+    vector<float> output_data(element_vector_product(output_shape));
     for(int i = 0; i < b_batch; i++){
         auto matrix_batch_i = b->getBatch(i);
         Tensor matrix_output = vector_matrix_product(v_view, matrix_batch_i);
         float* matrix_data = matrix_output.getData();
         copy(matrix_data, matrix_data + b_col, output_data.begin() + i * b_col);
     }
-    return Tensor(output_shape, output_data.data(), {v,b});
+    return Tensor(output_shape, output_data , {v,b});
  }
 
 Tensor matrix_batch_product(shared_ptr<Tensor> m, shared_ptr<Tensor> b) {
@@ -163,14 +164,14 @@ Tensor matrix_batch_product(shared_ptr<Tensor> m, shared_ptr<Tensor> b) {
     int m_row = m->getShape().at(0);
     int b_col = b->getShape().at(2);
     vector<int> output_shape = {b_batch, m_row, b_col};
-    vector<float> output_data(product(output_shape));
+    vector<float> output_data(element_vector_product(output_shape));
     for (int i = 0; i < b_batch; i++) {
         auto matrix_batch_i = b->getBatch(i);
         Tensor matrix_output = matrix_matrix_product(m, matrix_batch_i);
         float* matrix_data = matrix_output.getData();
         copy(matrix_data, matrix_data + m_row*b_col, output_data.begin() + m_row*b_col* i);
     }
-    return Tensor(output_shape, output_data.data(), {m,b});
+    return Tensor(output_shape, output_data , {m,b});
 }
 
 
@@ -181,7 +182,7 @@ Tensor batch_batch_product(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
     int n = b->shape[2];
     
     vector<int> output_shape = {batch, m, n};
-    vector<float> output_data(product(output_shape));
+    vector<float> output_data(element_vector_product(output_shape));
 
     for(int i=0; i<batch; i++){
 
@@ -194,10 +195,10 @@ Tensor batch_batch_product(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
         auto sub_res = matrix_matrix_product(sub_a, sub_b);
  
         float* src = sub_res.getData();
-        float* dst = output_data.data() + i * (m*n);
+        float* dst = output_data.data()  + i * (m*n);
         copy(src, src + (m*n), dst);
     }
-    return Tensor(output_shape, output_data.data(), {a,b});
+    return Tensor(output_shape, output_data , {a,b});
 }
 
 shared_ptr<Tensor> operator+(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
@@ -220,7 +221,7 @@ shared_ptr<Tensor> operator+(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
     if (b_view->shape[1] == 1 && out_rows  > 1) sB[1] = 0;
     if (b_view->shape[2] == 1 && out_cols  > 1) sB[2] = 0;
 
-    vector<float> output_data(product(output_shape));
+    vector<float> output_data(element_vector_product(output_shape));
     float* data_a = a_view->getData();
     float* data_b = b_view->getData();
 
@@ -235,7 +236,7 @@ shared_ptr<Tensor> operator+(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
         }
     }
 
-    auto result = make_shared<Tensor>(output_shape, output_data.data(), vector<shared_ptr<Tensor>>{a, b});
+    auto result = make_shared<Tensor>(output_shape, output_data , vector<shared_ptr<Tensor>>{a, b});
 
 
     result->_backward = [a, b, result]() {
@@ -258,12 +259,12 @@ float relu_function(float x){
 }
 
 shared_ptr<Tensor> relu(shared_ptr<Tensor> a){
-    vector<float> output_data(product(a->getShape()));
+    vector<float> output_data(element_vector_product(a->getShape()));
     for(size_t i=0; i< a->getSize();i++){
         output_data[i] = relu_function(a->getData()[i]); 
     }
     
-    auto result = make_shared<Tensor>(a->getShape(), output_data.data(), vector<shared_ptr<Tensor>>{a});
+    auto result = make_shared<Tensor>(a->getShape(), output_data , vector<shared_ptr<Tensor>>{a});
 
     result->_backward = [a, result]() {
         if (!a->grad) a->grad = Tensor::zeros(a->shape);
@@ -280,10 +281,6 @@ shared_ptr<Tensor> relu(shared_ptr<Tensor> a){
     };
 
     return result;
-}
-
-std::shared_ptr<Tensor> linear_activation(std::shared_ptr<Tensor> x) {
-    return x;
 }
 
 
@@ -322,10 +319,9 @@ shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b, bool requi
     }
     else throw runtime_error("Dimensiones no soportadas");
 
-    result->childs = {a, b}; 
+    result->parents = {a, b}; 
 
-
-    result->_backward = [a, b, result]() {
+        result->_backward = [a, b, result]() {
         if (!a->grad) a->grad = Tensor::zeros(a->shape);
         if (!b->grad) b->grad = Tensor::zeros(b->shape);
         auto grad_output = result->grad;
@@ -336,14 +332,12 @@ shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b, bool requi
         auto da = matmul(grad_output, b_T,false);
         unbroadcast(a, da);
 
-        // 2. Gradiente respecto a B (Pesos): dB = Grad.T @ A
-        // CAMBIO CRÍTICO: Usamos Grad.T @ A en lugar de A.T @ Grad
-        // Matriz (Out, Batch) @ (Batch, In) -> (Out, In)
-        auto grad_T = transpose_view(grad_output);
-        auto db = matmul(grad_T, a,false);
+        // 2. Gradiente respecto a B (Pesos): dB = A.T @ Grad
+        // Matriz (In, Batch) @ (Batch, Out) -> (In, Out)
+        auto a_T = transpose_view(a);
+        auto db = matmul(a_T, grad_output, false);
         
-        // Ahora db tiene forma (Out, In), igual que b.
-        // unbroadcast funcionará perfecto sin hacks de memoria.
+        // Unbroadcast will now handle transposed accumulation correctly
         unbroadcast(b, db);
     };
 
@@ -351,12 +345,124 @@ shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b, bool requi
 }
 
 
+std::shared_ptr<Tensor> operator*(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b) { 
+    if (a->getSize() != b->getSize()) { throw std::runtime_error("Element-wise mul: Tamaños no coinciden"); } 
+    std::vector<float> output_data(a->getSize()); 
+    float* data_a = a->getData(); 
+    float* data_b = b->getData(); 
+    size_t size = a->getSize();
+     // Forward: a[i] * b[i] 
+    for (size_t i = 0; i < size; i++) { 
+        output_data[i] = data_a[i] * data_b[i];
+    } 
+    auto result = std::make_shared<Tensor>(a->getShape(), output_data, 
+        std::vector<std::shared_ptr<Tensor>>{a, b}); 
+    // Backward: Product Rule // si y = a * b // dy/da = b * dy // dy/db = a * dy 
+    result->_backward = [a, b, result]() { 
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+        if (!b->grad) b->grad = Tensor::zeros(b->shape); 
+
+        float* grad_out = result->grad->getData(); 
+        float* grad_a = a->grad->getData(); 
+        float* grad_b = b->grad->getData(); 
+        float* val_a = a->getData(); 
+        float* val_b = b->getData(); 
+        size_t sz = a->getSize(); 
+        for (size_t i = 0; i < sz; i++) { 
+            grad_a[i] += val_b[i] * grad_out[i]; 
+            grad_b[i] += val_a[i] * grad_out[i]; 
+            } 
+        };
+        return result;
+    
+    }
+
+
+
+shared_ptr<Tensor> operator*(shared_ptr<Tensor> a, float scalar) {
+    // Forward
+    vector<float> output_data(element_vector_product(a->getShape()));
+    float* input_data = a->getData();
+    size_t size = a->getSize();
+
+    for (size_t i = 0; i < size; i++) {
+        output_data[i] = input_data[i] * scalar;
+    }
+
+    auto result = make_shared<Tensor>(a->getShape(), output_data , vector<shared_ptr<Tensor>>{a});
+
+    // Backward: dy/dx = scalar
+    result->_backward = [a, result, scalar]() {
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+
+        float* grad_input = a->grad->getData();
+        float* grad_output = result->grad->getData();
+        size_t size = a->getSize();
+
+        for (size_t i = 0; i < size; i++) {
+            grad_input[i] += grad_output[i] * scalar;
+        }
+    };
+
+    return result;
+}
+
+
+shared_ptr<Tensor> operator-(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
+    return a + (b * -1.0f);
+}
+
+
+
+
+std::shared_ptr<Tensor> operator/(std::shared_ptr<Tensor> a, float scalar) {
+    return a * (1.0f / scalar);
+}
+
+
+shared_ptr<Tensor> sum(shared_ptr<Tensor> a) {
+    float total = 0.0f;
+    float* data = a->getData();
+    size_t size = a->getSize(); 
+
+    for(size_t i = 0; i < size; i++) {
+        total += data[i];
+    }
+
+    vector<float> res_data = {total};
+    auto result = make_shared<Tensor>(vector<int>{1}, res_data , vector<shared_ptr<Tensor>>{a});
+
+
+    result->_backward = [a, result]() {
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+
+        float grad_output = result->grad->getData()[0];
+        
+        float* grad_input = a->grad->getData();
+        size_t n = a->getSize();
+
+        for(size_t i = 0; i < n; i++) {
+            grad_input[i] += grad_output;
+        }
+    };
+
+    return result;
+}
+
+
+
+std::shared_ptr<Tensor> linear_activation(std::shared_ptr<Tensor> x) {
+    return x;
+}
+
+
+
 // Transpose operation
 shared_ptr<Tensor> transpose_view(shared_ptr<Tensor> a) {
 
     auto result = make_shared<Tensor>(*a); 
     result->grad = nullptr;
-    result->childs = {a};
+    result->parents = {a};
 
     int dims = a->getDimension();
 
@@ -388,112 +494,8 @@ shared_ptr<Tensor> transpose_view(shared_ptr<Tensor> a) {
 
 
 
-shared_ptr<Tensor> operator*(shared_ptr<Tensor> a, float scalar) {
-    // Forward
-    vector<float> output_data(product(a->getShape()));
-    float* input_data = a->getData();
-    size_t size = a->getSize();
-
-    for (size_t i = 0; i < size; i++) {
-        output_data[i] = input_data[i] * scalar;
-    }
-
-    auto result = make_shared<Tensor>(a->getShape(), output_data.data(), vector<shared_ptr<Tensor>>{a});
-
-    // Backward: dy/dx = scalar
-    result->_backward = [a, result, scalar]() {
-        if (!a->grad) a->grad = Tensor::zeros(a->shape);
-
-        float* grad_input = a->grad->getData();
-        float* grad_output = result->grad->getData();
-        size_t size = a->getSize();
-
-        for (size_t i = 0; i < size; i++) {
-            grad_input[i] += grad_output[i] * scalar;
-        }
-    };
-
-    return result;
-}
 
 
-shared_ptr<Tensor> operator-(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
-    return a + (b * -1.0f);
-}
 
 
-std::shared_ptr<Tensor> operator*(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b) {
 
-    if (a->getSize() != b->getSize()) {
-        throw std::runtime_error("Element-wise mul: Tamaños no coinciden");
-    }
-
-    std::vector<float> output_data(a->getSize());
-    float* data_a = a->getData();
-    float* data_b = b->getData();
-    size_t size = a->getSize();
-
-    // Forward: a[i] * b[i]
-    for (size_t i = 0; i < size; i++) {
-        output_data[i] = data_a[i] * data_b[i];
-    }
-
-    auto result = std::make_shared<Tensor>(a->getShape(), output_data.data(), std::vector<std::shared_ptr<Tensor>>{a, b});
-
-    // Backward: Product Rule
-    // si y = a * b
-    // dy/da = b * dy
-    // dy/db = a * dy
-    result->_backward = [a, b, result]() {
-        if (!a->grad) a->grad = Tensor::zeros(a->shape);
-        if (!b->grad) b->grad = Tensor::zeros(b->shape);
-
-        float* grad_out = result->grad->getData();
-        float* grad_a = a->grad->getData();
-        float* grad_b = b->grad->getData();
-        float* val_a = a->getData();
-        float* val_b = b->getData();
-        size_t sz = a->getSize();
-
-        for (size_t i = 0; i < sz; i++) {
-            grad_a[i] += val_b[i] * grad_out[i];
-            grad_b[i] += val_a[i] * grad_out[i];
-        }
-    };
-
-    return result;
-}
-
-std::shared_ptr<Tensor> operator/(std::shared_ptr<Tensor> a, float scalar) {
-    return a * (1.0f / scalar);
-}
-
-
-shared_ptr<Tensor> sum(shared_ptr<Tensor> a) {
-    float total = 0.0f;
-    float* data = a->getData();
-    size_t size = a->getSize(); 
-
-    for(size_t i = 0; i < size; i++) {
-        total += data[i];
-    }
-
-    vector<float> res_data = {total};
-    auto result = make_shared<Tensor>(vector<int>{1}, res_data.data(), vector<shared_ptr<Tensor>>{a});
-
-
-    result->_backward = [a, result]() {
-        if (!a->grad) a->grad = Tensor::zeros(a->shape);
-
-        float grad_output = result->grad->getData()[0];
-        
-        float* grad_input = a->grad->getData();
-        size_t n = a->getSize();
-
-        for(size_t i = 0; i < n; i++) {
-            grad_input[i] += grad_output;
-        }
-    };
-
-    return result;
-}

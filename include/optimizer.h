@@ -21,9 +21,7 @@ struct Optimizer {
 struct SGD : public Optimizer {
     float lr;
 
-    
     SGD(const std::vector<std::shared_ptr<Tensor>>& params, float learning_rate);
-
 
     void step() override;
 };

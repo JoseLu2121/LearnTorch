@@ -3,4 +3,4 @@
 #include <cstddef> 
 
 
-size_t product(const std::vector<int>& v);
+size_t element_vector_product(const std::vector<int>& v);
