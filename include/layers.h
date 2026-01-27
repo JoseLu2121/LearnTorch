@@ -45,7 +45,7 @@ struct Linear : public Block {
 // Relu Layer
 // Y = max(0, X)
 struct ReLU : public Block {
-    // Constructor (no Weights or Biases)
+    // Constructor
     ReLU() : Block("ReLU") {}
 
     TensorList forward(TensorList inputs) override {
@@ -58,4 +58,69 @@ struct ReLU : public Block {
     }
 
     // No parameters function because we have no Weights or Biases
+};
+
+
+// Sigmoid Layer
+struct Sigmoid: public Block {
+    // Constructor
+    Sigmoid() : Block("Sigmoid") {};
+
+    TensorList forward(TensorList inputs) override {
+        if (inputs.size() != 1) {
+             throw std::runtime_error("Sigmoid waits one input, it received " + std::to_string(inputs.size()));
+        };
+        // We return de operation sigmoid applied to the input tensor
+        return { sigmoid(inputs[0]) };
+
+
+    };
+
+    // No parameters function because we have no Weights or Biases
+
+};
+
+// Tanh Layer
+struct Tanh: public Block {
+    // Constructor
+    Tanh() : Block("Tanh") {};
+
+    TensorList forward(TensorList inputs) override {
+        if (inputs.size() != 1) {
+             throw std::runtime_error("Sigmoid waits one input, it received " + std::to_string(inputs.size()));
+        };
+        // We return de operation sigmoid applied to the input tensor
+        return { tanh(inputs[0]) };
+
+
+    };
+
+    // No parameters function because we have no Weights or Biases
+
+};
+
+// Softmax Layer
+struct Softmax: public Block {
+    // Constructor
+    Softmax() : Block("Softmax") {};
+
+    TensorList forward(TensorList inputs) override {
+        if(inputs.size() != 1) {
+            throw std::runtime_error("Softmax waits one input, it received " + std::to_string(inputs.size()));
+
+        }
+
+        auto x = inputs[0];
+
+        auto exp_x = exp(x);
+
+        auto sum_exp_x = sum(exp_x);
+
+        float sum_val = sum_exp_x->getData()[0];
+        auto out = exp_x / sum_val;
+
+        return { out };
+    }
+
+
 };

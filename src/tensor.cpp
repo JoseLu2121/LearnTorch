@@ -1,5 +1,8 @@
 #include "tensor.h"
 #include "utils.h" 
+#include "types.h"
+#include "device.h"
+#include "backend.h"
 using namespace std;
 
 // ====================
@@ -147,6 +150,62 @@ shared_ptr<Tensor> Tensor::view_to_3d() {
         view->shape.insert(view->shape.begin(), 1);
     }
     return view;
+}
+
+shared_ptr<Tensor> Tensor::view_to_gemm(bool as_b_term) {
+    
+    auto view = make_shared<Tensor>(*this);
+    // Same logic as view_to_3d, but depends on whether the tensor is the second operand
+    if(view->getDimension() == 1){
+        if(as_b_term){
+            view->shape = {1, view->shape[0], 1};
+            view->strides = {0, view->strides[0], 0};
+        } else{
+            view->shape = {1,1,view->shape[0]};
+            view->strides = {0,0, view->strides[0],};
+        }
+    }
+    else if(view->getDimension() == 2){
+        view->shape.insert(view->shape.begin(), 1);
+        view->strides.insert(view->strides.begin(), 0); 
+    }
+    else {
+        if(view->shape[0] == 1) { view->strides[0] = 0;}
+    }
+    return view;
+
+}
+
+TensorInfo Tensor::getInfo()  {
+    return TensorInfo{
+        data.get(),
+        shape.data(),
+        strides.data(),
+        getDimension(),
+        total_size
+
+    };
+}
+
+
+shared_ptr<Tensor> Tensor::compute_binary_op(shared_ptr<Tensor> b, BinaryOp op){
+    auto a_view = this->view_to_3d();
+    auto b_view = b->view_to_3d();
+
+    std::vector<int> out_shape = (this->getSize() > b->getSize()) ? this->shape : b->shape;
+
+    
+    auto out = std::make_shared<Tensor>(out_shape);
+    
+    TensorInfo i_a = a_view.get()->getInfo();
+    TensorInfo i_b = b_view.get()->getInfo();
+    TensorInfo i_out = out.get()->getInfo();
+
+    Device::get()->binary(i_a,i_b,i_out,op);
+
+    return out;
+
+
 }
 
 // ===================

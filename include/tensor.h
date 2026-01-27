@@ -6,6 +6,7 @@
 #include <cassert>
 #include <unordered_set>
 #include <random>
+#include "types.h"
 
 // Tensor Class 
 struct Tensor : std::enable_shared_from_this<Tensor> {
@@ -71,6 +72,15 @@ public:
 
     // Build a 3D view of a tensor
     std::shared_ptr<Tensor> view_to_3d(); 
+
+    // Build a view for gemm
+    std::shared_ptr<Tensor> view_to_gemm(bool as_b_term);
+
+    // Build an optimized version of the tensor
+    TensorInfo getInfo();
+
+    // Compute a binary operation
+    std::shared_ptr<Tensor> compute_binary_op(std::shared_ptr<Tensor> b, BinaryOp op);
 
     // Static methods to create special tensors
     static std::shared_ptr<Tensor> zeros(const std::vector<int>& shape); // All elements are 0

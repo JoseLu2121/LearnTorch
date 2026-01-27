@@ -12,3 +12,7 @@ struct Loss {
 struct MSELoss : public Loss {
     std::shared_ptr<Tensor> forward(std::shared_ptr<Tensor> prediction, std::shared_ptr<Tensor> target) override;
 };
+
+struct CrossEntropy : public Loss {
+    std::shared_ptr<Tensor> forward(std::shared_ptr<Tensor> prediction, std::shared_ptr<Tensor> target) override;
+};
