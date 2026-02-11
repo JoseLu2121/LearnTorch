@@ -1,0 +1,16 @@
+pyproject.toml
+setup.py
+learntorch.egg-info/PKG-INFO
+learntorch.egg-info/SOURCES.txt
+learntorch.egg-info/dependency_links.txt
+learntorch.egg-info/top_level.txt
+src/CPUBackend.cpp
+src/bindings.cpp
+src/core.cpp
+src/loss.cpp
+src/neuron.cpp
+src/ops.cpp
+src/optimizers.cpp
+src/tensor.cpp
+src/trainer.cpp
+src/utils.cpp

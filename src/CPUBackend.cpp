@@ -6,18 +6,15 @@
 #include <vector>
 #include <string>
 
-using namespace std;
+#include "utils.h"
 
-size_t element_vector_product(const std::vector<int>& v) {
-    return std::accumulate(v.begin(), v.end(), 1, std::multiplies<int>());
-}
+using namespace std;
 
 // Get memory index given one
 inline int getIndex(int index, const TensorInfo& tensor){
     int offset = 0;
     int current_index = index;
     // We iterate each dimension from the right
-    // FIX: d >= 0 para incluir la dimensión 0
     for(int d = tensor.dim - 1; d >= 0 ; --d){
         int relative_position = current_index % tensor.shape[d]; // Get the relative position from the actual dim
         offset += relative_position * tensor.strides[d]; // Apply stride in case of broadcast
@@ -32,16 +29,27 @@ inline int getIndex(int index, const TensorInfo& tensor){
 // A basic binary operation of two tensors
 void CPUBackend::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op){
 
-    for(size_t i = 0; i < out.size; i++){ // size_t para evitar warnings
-        // Get the real index of a,b and out
-        int a_index = getIndex(i,a);
-        int b_index = getIndex(i,b);
-        int out_index = getIndex(i,out);
+    size_t out_size = out.size;
+    
+    // Pointers
+    float* out_data = out.data;
+    const float* a_data = a.data;
+    const float* b_data = b.data;
 
-        // Get the values
+    // Since we handle broadcasting via strides in the Tensor class (views),
+    // we just need to iterate index-by-index mapping to coordinates.
+    // NOTE: If a and b are broadcasted views, getIndex will handle the 0-strides correctly.
+
+    for(size_t i = 0; i < out_size; i++){ 
+        
+        // Map linear index 'i' (of output) to offsets in a and b
+        int a_index = getIndex(i, a);
+        int b_index = getIndex(i, b);
+        
+        // Get values
+        float a_val = a_data[a_index];
+        float b_val = b_data[b_index];
         float out_val = 0.0f;
-        float a_val = a.data[a_index];
-        float b_val = b.data[b_index];
 
         // Switch for each case of operation
         switch (op)
@@ -53,15 +61,15 @@ void CPUBackend::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& ou
         case BinaryOp::POW : out_val = std::pow(a_val,b_val); break;
         }
         
-        out.data[out_index] = out_val;
+        out_data[i] = out_val;
     };
 
 };
 
 // A basic unary operation of a tensor
 void CPUBackend::unary(const TensorInfo& a, TensorInfo& out, UnaryOp op){
-
-    for(int i = 0; i < out.size; i++){
+    
+    for(size_t i = 0; i < out.size; i++){
 
         int a_index = getIndex(i,a);
         int out_index = getIndex(i,out);
@@ -115,11 +123,56 @@ void CPUBackend::gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out)
     }
 }
 
-// === Implementaciones Dummy para satisfacer al Linker ===
 float* CPUBackend::alloc(size_t size) { return new float[size]; }
 void CPUBackend::free(float* ptr) { delete[] ptr; }
-void CPUBackend::set(float* ptr, float value, size_t size) { /* TODO */ }
-void CPUBackend::reduce(const TensorInfo& a, const TensorInfo& b, ReduceOp op) { /* TODO */ }
+void CPUBackend::set(float* ptr, float value, size_t size) { 
+   for(size_t i=0; i<size; i++) ptr[i] = value;
+}
+
+void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) {
+ 
+    size_t out_size = out.size;
+    int reduction_size = in.shape[dim]; // number of elements to reduce
+    
+    for (size_t i = 0; i < out_size; i++) {
+        
+        int current_idx = i;
+        int in_offset_base = 0;
+        
+        for (int d = out.dim - 1; d >= 0; --d) {
+            int coord = current_idx % out.shape[d];
+            current_idx /= out.shape[d];
+            in_offset_base += coord * in.strides[d];
+        }
+        float acc = 0.0f;
+        switch (op) { // initial op default values
+            case ReduceOp::SUM: acc = 0.0f; break;
+            case ReduceOp::MAX: acc = -1e9f; break; 
+            case ReduceOp::MIN: acc = 1e9f; break;
+            default: break;
+        }
+        // we prefer adding the first value of the dimension as the default 
+        if (reduction_size > 0 && op == ReduceOp::MAX) acc = in.data[in_offset_base]; 
+        if (reduction_size > 0 && op == ReduceOp::MIN) acc = in.data[in_offset_base];
+        // the stride of the dimension we reduce
+        int stride_dim = in.strides[dim];
+
+        for (int j = 0; j < reduction_size; j++) { // iterate per element to reduce
+            float val = in.data[in_offset_base + j * stride_dim];
+            switch (op) {
+                case ReduceOp::SUM: acc += val; break;
+                case ReduceOp::MAX: if (val > acc) acc = val; break;
+                case ReduceOp::MIN: if (val < acc) acc = val; break;
+                default: break;
+            }
+        }
+        
+        // set the value in the real memory data index
+        int out_real_index = getIndex(i, out);
+        out.data[out_real_index] = acc;
+    }
+}
+
 
 
 // Unbroadcast function to accumulate gradients correctly

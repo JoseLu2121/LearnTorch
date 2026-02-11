@@ -1,109 +1,138 @@
 #include <iostream>
+#include <memory>
+#include <vector>
 #include <cmath>
-#include <cstdlib>
-#include <ctime>
 #include "tensor.h"
-#include "block.h"
+#include "ops.h"
 #include "layers.h"
-#include "structure.h"
-#include "optimizer.h"
 #include "loss.h"
-#include "trainer.h"
-#include "mnist_loader.h"
 
 using namespace std;
 
-// --- FUNCIÓN PARA VER LAS IMÁGENES ---
-void visualize_results(shared_ptr<Block> model, shared_ptr<Tensor> x, shared_ptr<Tensor> y, int num_samples) {
-    cout << "\n=== VISUALIZACION DE RESULTADOS ===" << endl;
-    
-    auto preds = model->forward({x})[0];
-    float* p_data = preds->getData();
-    float* x_data = x->getData();
-    float* y_data = y->getData();
-    
-    int total_samples = x->shape[0];
-
-    for(int k=0; k<num_samples; k++) {
-        // Elegir un índice aleatorio o los primeros k
-        int idx = k; // O rand() % total_samples;
-        
-        // Obtener predicción y real
-        float* this_pred = p_data + idx * 10;
-        float* this_true = y_data + idx * 10;
-        
-        // Argmax casero
-        int p_digit = 0; float max_p = -999;
-        int t_digit = 0; float max_t = -999;
-        
-        for(int i=0; i<10; i++) {
-            if(this_pred[i] > max_p) { max_p = this_pred[i]; p_digit = i; }
-            if(this_true[i] > max_t) { max_t = this_true[i]; t_digit = i; }
-        }
-
-        cout << "\nEjemplo #" << idx << " | Real: " << t_digit << " | Prediccion: " << p_digit;
-        cout << (p_digit == t_digit ? " [CORRECTO]" : " [FALLO]") << endl;
-        cout << "----------------------------" << endl;
-
-        // DIBUJAR DIGITO (ASCII ART)
-        float* pixels = x_data + idx * 784;
-        for(int r=0; r<28; r++) {
-            for(int c=0; c<28; c++) {
-                float val = pixels[r*28 + c];
-                if (val > 0.75) cout << "@";      // Blanco fuerte
-                else if (val > 0.5) cout << "%";  // Gris
-                else if (val > 0.2) cout << ".";  // Gris claro
-                else cout << " ";                 // Negro
-                cout << " "; // Espaciado para que no se vea aplastado
-            }
-            cout << endl;
-        }
-        cout << "----------------------------" << endl;
-    }
-}
-
 int main() {
-    // 1. CARGAR DATOS
-    // Cargamos 1000 ejemplos para entrenar rápido
-    auto dataset = load_mnist_csv("../test/mnist_train.csv", 1000); 
-    auto x_train = dataset.first;
-    auto y_train = dataset.second;
-
-    cout << "Datos cargados: " << x_train->shape[0] << " imagenes." << endl;
-
-    // 2. MODELO
-    auto model = make_shared<Serial>(initializer_list<shared_ptr<Block>>{
-        make_shared<Linear>(784, 64),
-        make_shared<ReLU>(),
-        make_shared<Linear>(64, 10)
-    });
-
-    // --- INICIALIZACIÓN DE PESOS (IMPORTANTE) ---
-    srand(time(0));
-    for(auto& p : model->parameters()) {
-        float* d = p->getData();
-        // Inicialización Xavier simplificada
-        float scale = sqrt(2.0f / (p->getDimension() > 1 ? p->shape[1] : 1));
-        if (p->getDimension() == 1) scale = 0.0f; // Bias a 0
-        
-        for(int i=0; i<p->getSize(); i++) {
-            d[i] = ((float)rand()/RAND_MAX - 0.5f) * 2 * scale * 0.1f; 
+    cout << "=== PyTorch Equivalent Test in C++ (BATCH SIZE = 2) ===" << endl << endl;
+    
+    // --- CONFIGURACIÓN ---
+    // 1. Crear capa Linear(2, 2) con pesos manuales
+    auto linear = make_shared<Linear>(2, 2);
+    
+    // 2. SETEAR PESOS Y BIAS A MANO
+    // W = [[0.1, 0.2], [0.3, 0.4]]
+    // b = [0.1, -0.1]
+    auto weight = linear->W;
+    weight->getData()[0] = 0.1f;  // W[0,0]
+    weight->getData()[1] = 0.2f;  // W[0,1]
+    weight->getData()[2] = 0.3f;  // W[1,0]
+    weight->getData()[3] = 0.4f;  // W[1,1]
+    
+    auto bias = linear->B;
+    bias->getData()[0] = 0.1f;    // b[0]
+    bias->getData()[1] = -0.1f;   // b[1]
+    
+    cout << "Weights set to:" << endl;
+    cout << "  [[0.1, 0.2]," << endl;
+    cout << "   [0.3, 0.4]]" << endl;
+    cout << "Bias set to: [0.1, -0.1]" << endl << endl;
+    
+    // --- DATOS (BATCH SIZE = 2) ---
+    // Muestra 1: [1.0, 2.0] -> Target clase 0 (one-hot: [1.0, 0.0])
+    // Muestra 2: [0.5, 0.5] -> Target clase 1 (one-hot: [0.0, 1.0])
+    auto inputs = make_shared<Tensor>(
+        vector<int>{2, 2}, 
+        vector<float>{1.0f, 2.0f,    // Muestra 1
+                      0.5f, 0.5f}     // Muestra 2
+    );
+    
+    auto targets = make_shared<Tensor>(
+        vector<int>{2, 2},
+        vector<float>{1.0f, 0.0f,    // Target clase 0
+                      0.0f, 1.0f}     // Target clase 1
+    );
+    
+    cout << "Inputs shape: (" << inputs->shape[0] << ", " << inputs->shape[1] << ")" << endl;
+    cout << "Inputs data:" << endl;
+    cout << "  [[" << inputs->getData()[0] << ", " << inputs->getData()[1] << "]," << endl;
+    cout << "   [" << inputs->getData()[2] << ", " << inputs->getData()[3] << "]]" << endl << endl;
+    
+    cout << "Targets (one-hot):" << endl;
+    cout << "  [[" << targets->getData()[0] << ", " << targets->getData()[1] << "]," << endl;
+    cout << "   [" << targets->getData()[2] << ", " << targets->getData()[3] << "]]" << endl << endl;
+    
+    // --- FORWARD ---
+    // 1. Linear layer
+    auto logits_list = linear->forward({inputs});
+    auto logits = logits_list[0];
+    
+    cout << "1. Logits (Linear output):" << endl;
+    cout << "   Shape: (" << logits->shape[0] << ", " << logits->shape[1] << ")" << endl;
+    cout << "   Data:" << endl;
+    cout << "   [[" << logits->getData()[0] << ", " << logits->getData()[1] << "]," << endl;
+    cout << "    [" << logits->getData()[2] << ", " << logits->getData()[3] << "]]" << endl;
+    cout << "   Expected:" << endl;
+    cout << "   [[0.6, 1.0],    # 0.1*1 + 0.2*2 + 0.1 = 0.6, 0.3*1 + 0.4*2 - 0.1 = 1.0" << endl;
+    cout << "    [0.25, 0.25]]  # 0.1*0.5 + 0.2*0.5 + 0.1 = 0.25, 0.3*0.5 + 0.4*0.5 - 0.1 = 0.25" << endl;
+    cout << string(70, '-') << endl << endl;
+    
+    // 2. Softmax
+    auto softmax = make_shared<Softmax>();
+    auto probs_list = softmax->forward({logits});
+    auto probs = probs_list[0];
+    
+    cout << "2. Probabilities (Softmax):" << endl;
+    cout << "   Shape: (" << probs->shape[0] << ", " << probs->shape[1] << ")" << endl;
+    cout << "   Data:" << endl;
+    cout << "   [[" << probs->getData()[0] << ", " << probs->getData()[1] << "]," << endl;
+    cout << "    [" << probs->getData()[2] << ", " << probs->getData()[3] << "]]" << endl;
+    cout << string(70, '-') << endl << endl;
+    
+    // 3. CrossEntropy Loss (con promedio sobre el batch)
+    auto criterion = make_shared<CrossEntropy>();
+    auto loss = criterion->forward(probs, targets);
+    
+    cout << "3. Loss (CrossEntropy with mean reduction):" << endl;
+    cout << "   Value: " << loss->getData()[0] << endl;
+    cout << "   This is the AVERAGE loss over the 2 samples" << endl;
+    cout << string(70, '-') << endl << endl;
+    
+    // --- BACKWARD ---
+    cout << "4. Computing Gradients (Backward Pass)..." << endl;
+    
+    // Limpiar gradientes previos (simular zero_grad)
+    if (weight->grad) {
+        for (size_t i = 0; i < weight->getSize(); i++) {
+            weight->grad->getData()[i] = 0.0f;
         }
     }
-    // --------------------------------------------
-
-    // 3. ENTRENAR
-    // Usamos LR = 0.1 porque MSE con OneHot a veces requiere empujón fuerte
-    auto opt = make_shared<SGD>(model->parameters(), 0.1f); 
-    auto loss_fn = make_shared<MSELoss>();
-
-    Trainer trainer(model, opt, loss_fn);
+    if (bias->grad) {
+        for (size_t i = 0; i < bias->getSize(); i++) {
+            bias->grad->getData()[i] = 0.0f;
+        }
+    }
     
-    // 50 Epochs para asegurar que baje bien
-    trainer.fit(x_train, y_train, 200, 5); 
-
-    // 4. VER QUE HA PASADO
-    visualize_results(model, x_train, y_train, 3); // Visualizar 3 ejemplos
-
+    // Ejecutar backward
+    loss->backward();
+    
+    cout << "   Done!" << endl << endl;
+    
+    // --- RESULTADOS ---
+    cout << "5. Gradients of Weights (dL/dW):" << endl;
+    if (weight->grad) {
+        cout << "   [[" << weight->grad->getData()[0] << ", " << weight->grad->getData()[1] << "]," << endl;
+        cout << "    [" << weight->grad->getData()[2] << ", " << weight->grad->getData()[3] << "]]" << endl;
+    } else {
+        cout << "   No gradient computed!" << endl;
+    }
+    cout << endl;
+    
+    cout << "6. Gradients of Bias (dL/db):" << endl;
+    if (bias->grad) {
+        cout << "   [" << bias->grad->getData()[0] << ", " << bias->grad->getData()[1] << "]" << endl;
+    } else {
+        cout << "   No gradient computed!" << endl;
+    }
+    
+    cout << "\n" << string(70, '=') << endl;
+    cout << "=== Test Complete ===" << endl;
+    
     return 0;
 }

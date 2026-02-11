@@ -17,7 +17,7 @@ public:
     // Operations
     virtual void binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op) = 0;
     virtual void unary(const TensorInfo& a, TensorInfo& out, UnaryOp op) = 0;
-    virtual void reduce(const TensorInfo& a, const TensorInfo& b, ReduceOp op) = 0;
+    virtual void reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) = 0;
 
     // Operation for matmul
     virtual void gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) = 0;
@@ -35,10 +35,9 @@ struct CPUBackend : public Backend {
     void set(float* ptr, float value, size_t size) override;
 
     void binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op) override;
-    void unary(const TensorInfo& a, TensorInfo& out, UnaryOp op) override;
-    
+    void unary(const TensorInfo& a, TensorInfo& out, UnaryOp op) override;    
     // Missing overrides
-    void reduce(const TensorInfo& a, const TensorInfo& b, ReduceOp op) override;
+    void reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) override;
     void gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) override;
 
     void accumulate_grad(std::shared_ptr<Tensor> param, std::shared_ptr<Tensor> incoming_grad) override;

@@ -109,15 +109,16 @@ struct Softmax: public Block {
             throw std::runtime_error("Softmax waits one input, it received " + std::to_string(inputs.size()));
 
         }
-
+        
         auto x = inputs[0];
-
-        auto exp_x = exp(x);
-
-        auto sum_exp_x = sum(exp_x);
-
-        float sum_val = sum_exp_x->getData()[0];
-        auto out = exp_x / sum_val;
+        
+        // Estabilidad numérica: restar el máximo de cada fila
+        auto max_x = max(x, 1);
+        auto x_shifted = x - max_x; 
+        
+        auto exp_x = exp(x_shifted);
+        auto sum_exp_x = sum(exp_x, 1);
+        auto out = exp_x / sum_exp_x;
 
         return { out };
     }

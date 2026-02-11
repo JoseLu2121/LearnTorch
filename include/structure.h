@@ -12,6 +12,10 @@ struct Serial : public Block {
     Serial(std::initializer_list<std::shared_ptr<Block>> list) 
         : Block("Serial"), layers(list) {}
 
+    // Constructor with vector (pybind11 friendly)
+    Serial(const std::vector<std::shared_ptr<Block>>& list)
+        : Block("Serial"), layers(list) {}
+
     // Forward: we pass the output of each layer to the input of the next
     TensorList forward(TensorList inputs) override {
         auto x = inputs;

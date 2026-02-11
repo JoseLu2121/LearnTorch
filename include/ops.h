@@ -12,7 +12,9 @@ std::shared_ptr<Tensor> operator-(std::shared_ptr<Tensor> a, std::shared_ptr<Ten
 std::shared_ptr<Tensor> operator+(std::shared_ptr<Tensor> a, float scalar);
 std::shared_ptr<Tensor> operator*(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b);
 std::shared_ptr<Tensor> operator/(std::shared_ptr<Tensor> a, float scalar);
-std::shared_ptr<Tensor> sum(std::shared_ptr<Tensor> a);
+std::shared_ptr<Tensor> operator/(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b);
+std::shared_ptr<Tensor> sum(std::shared_ptr<Tensor> a, int dim);
+std::shared_ptr<Tensor> max(std::shared_ptr<Tensor> a, int dim);
 std::shared_ptr<Tensor> matmul_no_grad(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b);
 std::shared_ptr<Tensor> sigmoid(std::shared_ptr<Tensor> a);
 std::shared_ptr<Tensor> tanh(std::shared_ptr<Tensor> a);

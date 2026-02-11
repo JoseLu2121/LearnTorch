@@ -15,8 +15,6 @@ private:
     std::shared_ptr<float[]> data;
     // Number of elementes of the tensor
     size_t total_size;
-    // Offset used for batches
-    size_t offset = 0;
 
 public:
     // Shape of the tensor (batch,row,col)
@@ -58,7 +56,7 @@ public:
     std::vector<int> getStrides() const { return strides; }
 
     // Get the pointer to the data of the tensor
-    float* getData() const { return data.get() + offset; }
+    float* getData() const { return data.get();}
 
     // Get the vector of the shape of the tensor
     std::vector<int> getShape() const { return shape; }
@@ -66,21 +64,30 @@ public:
     // Get the parents of the tensor
     std::vector<std::shared_ptr<Tensor>> getParents() const { return parents; }
     int getDimension() const { return shape.size(); }
-    
-    // Get a batch given an index
-    std::shared_ptr<Tensor> getBatch(int index);
 
     // Build a 3D view of a tensor
     std::shared_ptr<Tensor> view_to_3d(); 
 
     // Build a view for gemm
     std::shared_ptr<Tensor> view_to_gemm(bool as_b_term);
+    
+    // Creates a broadcasted view to match target_shape
+    std::shared_ptr<Tensor> broadcast_to(const std::vector<int>& target_shape);
+    
+    // Calculates the resulting shape from broadcasting two shapes
+    static std::vector<int> broadcast_shapes(const std::vector<int>& shape_a, const std::vector<int>& shape_b);
 
     // Build an optimized version of the tensor
     TensorInfo getInfo();
 
     // Compute a binary operation
     std::shared_ptr<Tensor> compute_binary_op(std::shared_ptr<Tensor> b, BinaryOp op);
+
+    // Compute a unary operation
+    std::shared_ptr<Tensor> compute_unary_op(UnaryOp op);
+
+    // Compute a reduce operation
+    std::shared_ptr<Tensor> compute_reduce_op(int dim, ReduceOp op);
 
     // Static methods to create special tensors
     static std::shared_ptr<Tensor> zeros(const std::vector<int>& shape); // All elements are 0

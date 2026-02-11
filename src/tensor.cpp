@@ -54,7 +54,6 @@ Tensor::Tensor(const Tensor& other)
     : data(other.data),       
       shape(other.shape),     
       strides(other.strides), 
-      offset(other.offset),
       total_size(other.total_size),
       grad(nullptr), // We avoid issues with the original grad tensor
       parents({}){}
@@ -105,7 +104,7 @@ void Tensor::info(int max_size) const {
     // We only print the elements if the tensor is small 
     if (total_size <= max_size) {
         cout << "  Data: [ ";
-        for (int i = 0; i < max_size; i++) cout << data[i + offset] << " ";
+        for (int i = 0; i < max_size; i++) cout << data[i] << " ";
         cout << "]" << endl;
     } else {
         cout << "  Data: [ ... " << total_size << " elementos ... ]" << endl;
@@ -116,26 +115,6 @@ void Tensor::info(int max_size) const {
 // ===================
 // Size and view manipulation
 // ===================
-
-shared_ptr<Tensor> Tensor::getBatch(int index) {
-
-    // We can only get a batch of a 3D tensor
-    if(getDimension() != 3) throw std::runtime_error("getBatch only support 3D tensors");
-
-    // We must throw an error if the index is out of range
-    if (index < 0 || index >= shape[0])
-        throw std::out_of_range("Batch index out of range");
-
-    // We create a view of the tensor
-    auto tensor_view = make_shared<Tensor>(*this);
-
-    tensor_view->shape = {shape[1], shape[2]};
-    tensor_view->offset = this->offset + (index * strides[0]);
-    tensor_view->strides = {strides[1], strides[2]};
-    tensor_view->parents = {shared_from_this()}; // The parent of this tensor is the original one
-
-    return tensor_view;
-}
 
 shared_ptr<Tensor> Tensor::view_to_3d() {
     // We create a view of the tensor
@@ -183,28 +162,100 @@ TensorInfo Tensor::getInfo()  {
         strides.data(),
         getDimension(),
         total_size
-
     };
 }
 
+// ====================
+// View / Broadcasting
+// ====================
+vector<int> Tensor::broadcast_shapes(const vector<int>& shape_a, const vector<int>& shape_b) {
+    int max_dims = std::max(shape_a.size(), shape_b.size());
+    vector<int> out_shape(max_dims);
+    
+    int i_a = (int)shape_a.size() - 1;
+    int i_b = (int)shape_b.size() - 1;
+    int i_out = max_dims - 1;
+    
+    while (i_out >= 0) {
+        int dim_a = (i_a >= 0) ? shape_a[i_a] : 1;
+        int dim_b = (i_b >= 0) ? shape_b[i_b] : 1;
+        
+        if (dim_a != dim_b && dim_a != 1 && dim_b != 1) {
+             // In a robust framework we would throw exception here
+             out_shape[i_out] = std::max(dim_a, dim_b);
+        } else {
+             out_shape[i_out] = std::max(dim_a, dim_b);
+        }
+        
+        i_a--; i_b--; i_out--;
+    }
+    return out_shape;
+}
+
+shared_ptr<Tensor> Tensor::broadcast_to(const vector<int>& target_shape) {
+    if (this->shape == target_shape) return shared_from_this();
+
+    auto view = make_shared<Tensor>(*this);
+    view->shape = target_shape;
+    view->strides.resize(target_shape.size());
+    
+    int offset = (int)target_shape.size() - (int)this->shape.size();
+    
+    for (int i = 0; i < target_shape.size(); ++i) {
+        int original_idx = i - offset;
+        
+        if (original_idx < 0) {
+            // New dimension (broadcasted) -> stride 0
+            view->strides[i] = 0;
+        } else {
+            // Existing dimension
+            if (this->shape[original_idx] == target_shape[i]) {
+                view->strides[i] = this->strides[original_idx];
+            } else {
+                // Dimension 1 stretched -> stride 0
+                view->strides[i] = 0;
+            }
+        }
+    }
+    return view;
+}
 
 shared_ptr<Tensor> Tensor::compute_binary_op(shared_ptr<Tensor> b, BinaryOp op){
-    auto a_view = this->view_to_3d();
-    auto b_view = b->view_to_3d();
-
-    std::vector<int> out_shape = (this->getSize() > b->getSize()) ? this->shape : b->shape;
-
-    
+    // 1. Calculate output shape
+    vector<int> out_shape = broadcast_shapes(this->shape, b->shape);
     auto out = std::make_shared<Tensor>(out_shape);
-    
-    TensorInfo i_a = a_view.get()->getInfo();
-    TensorInfo i_b = b_view.get()->getInfo();
-    TensorInfo i_out = out.get()->getInfo();
 
-    Device::get()->binary(i_a,i_b,i_out,op);
+    // 2. Create broadcasted views of inputs
+    auto a_view = this->broadcast_to(out_shape);
+    auto b_view = b->broadcast_to(out_shape);
+    
+    // 3. Update output info
+    TensorInfo i_out = out->getInfo();
+    
+    // 4. Call backend with aligned shapes
+    Device::get()->binary(a_view->getInfo(), b_view->getInfo(), i_out, op);
 
     return out;
+}
 
+shared_ptr<Tensor> Tensor::compute_unary_op(UnaryOp op) {
+    auto out = std::make_shared<Tensor>(this->shape);
+    TensorInfo i_out = out.get()->getInfo();
+    
+    Device::get()->unary(this->getInfo(), i_out, op);
+
+    return out;
+}
+
+shared_ptr<Tensor> Tensor::compute_reduce_op(int dim, ReduceOp op) {
+    vector<int> out_shape = this->shape;
+    out_shape[dim] = 1;
+    auto out = std::make_shared<Tensor>(out_shape);
+    TensorInfo i_out = out.get()->getInfo();
+    
+    Device::get()->reduce(this->getInfo(), i_out, dim, op);
+
+    return out;
 
 }
 
@@ -231,8 +282,9 @@ shared_ptr<Tensor> Tensor::random(const vector<int>& shape, float min_val, float
     return make_shared<Tensor>(shape, random_data);
 }
 
-
-
+// ===================
+// Backward functions
+// ===================
 
 void Tensor::build_topo(shared_ptr<Tensor> v, vector<shared_ptr<Tensor>>& topo, unordered_set<Tensor*>& visited){
     if(visited.find(v.get()) == visited.end()){
