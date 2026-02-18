@@ -21,4 +21,6 @@ public:
              std::shared_ptr<Tensor> y_train, 
              int epochs, 
              int print_every = 10);
+
+    float calculate_accuracy(std::shared_ptr<Tensor> a, std::shared_ptr<Tensor> b);
 };

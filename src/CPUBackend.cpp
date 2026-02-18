@@ -138,6 +138,7 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
         
         int current_idx = i;
         int in_offset_base = 0;
+
         
         for (int d = out.dim - 1; d >= 0; --d) {
             int coord = current_idx % out.shape[d];
@@ -145,15 +146,21 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
             in_offset_base += coord * in.strides[d];
         }
         float acc = 0.0f;
+        float max_val = -1e-9f;
+        int best_idx = 0;
         switch (op) { // initial op default values
             case ReduceOp::SUM: acc = 0.0f; break;
             case ReduceOp::MAX: acc = -1e9f; break; 
             case ReduceOp::MIN: acc = 1e9f; break;
+            case ReduceOp::ARGMAX: max_val = -1e9f; 
+                                   best_idx = 0; break;
             default: break;
         }
         // we prefer adding the first value of the dimension as the default 
         if (reduction_size > 0 && op == ReduceOp::MAX) acc = in.data[in_offset_base]; 
         if (reduction_size > 0 && op == ReduceOp::MIN) acc = in.data[in_offset_base];
+        if (op == ReduceOp::ARGMAX) max_val = in.data[in_offset_base]; // Inicialización segura
+
         // the stride of the dimension we reduce
         int stride_dim = in.strides[dim];
 
@@ -163,8 +170,17 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
                 case ReduceOp::SUM: acc += val; break;
                 case ReduceOp::MAX: if (val > acc) acc = val; break;
                 case ReduceOp::MIN: if (val < acc) acc = val; break;
+                case ReduceOp::ARGMAX: if (val > max_val) {
+                        max_val = val; // Actualizamos el récord del número más grande
+                        best_idx = j;  // Guardamos su posición relativa (la clase)
+                    }
+                    break;
                 default: break;
             }
+        }
+
+        if (op == ReduceOp::ARGMAX) {
+            acc = (float)best_idx;
         }
         
         // set the value in the real memory data index

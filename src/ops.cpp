@@ -116,8 +116,6 @@ std::shared_ptr<Tensor> operator*(std::shared_ptr<Tensor> a, std::shared_ptr<Ten
     
 }
 
-
-
 shared_ptr<Tensor> operator*(shared_ptr<Tensor> a, float scalar) {
     // Forward
     vector<float> output_data(element_vector_product(a->getShape()));
@@ -185,9 +183,6 @@ shared_ptr<Tensor> operator-(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
 
     return out;
 }
-
-
-
 
 std::shared_ptr<Tensor> operator/(std::shared_ptr<Tensor> a, float scalar) {
     return a * (1.0f / scalar);
@@ -299,6 +294,16 @@ shared_ptr<Tensor> max(shared_ptr<Tensor> a, int dim = 0) {
     return out;
 }
 
+shared_ptr<Tensor> argmax(shared_ptr<Tensor> a, int dim =0){
+    auto out = a->compute_reduce_op(dim, ReduceOp::ARGMAX);
+    out->parents = {a};
+    out->_backward = [a,out]() {
+        (void) a; (void) out;
+    };
+
+    return out;
+}
+
 
 // Transpose operation
 shared_ptr<Tensor> transpose_view(shared_ptr<Tensor> a) {
@@ -334,9 +339,6 @@ shared_ptr<Tensor> transpose_view(shared_ptr<Tensor> a) {
 
     return result;
 }
-
-
-
 
 shared_ptr<Tensor> relu(shared_ptr<Tensor> a){
     

@@ -113,11 +113,12 @@ struct Softmax: public Block {
         auto x = inputs[0];
         
         // Estabilidad numérica: restar el máximo de cada fila
-        auto max_x = max(x, 1);
+        auto axis = x->shape.size() - 1;
+        auto max_x = max(x, axis);
         auto x_shifted = x - max_x; 
         
         auto exp_x = exp(x_shifted);
-        auto sum_exp_x = sum(exp_x, 1);
+        auto sum_exp_x = sum(exp_x, axis);
         auto out = exp_x / sum_exp_x;
 
         return { out };

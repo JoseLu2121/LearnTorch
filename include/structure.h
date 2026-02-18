@@ -18,13 +18,11 @@ struct Serial : public Block {
 
     // Forward: we pass the output of each layer to the input of the next
     TensorList forward(TensorList inputs) override {
-        TensorList outputs;
         auto x = inputs;
-        for(auto& layer : layers) {
-            auto out_layer = layer->forward(x);
-            outputs.insert(outputs.end(),out_layer.begin(), out_layer.end());
+        for (auto& layer : layers) {
+            x = layer->forward(x);
         }
-        return outputs;
+        return x;
     }
 
     // Paremeters: we concatenate the parameters of each layer
@@ -52,7 +50,8 @@ struct Parallel : public Block {
     TensorList forward(TensorList inputs) override {
         TensorList output;
         for(auto& layer : layers) {
-            output.push_back(layer->forward(inputs));
+            auto o = layer->forward(inputs);
+            output.push_back(o[0]);
         }
         return output;
     }
@@ -72,8 +71,11 @@ struct Parallel : public Block {
 
 
 struct Join : public Block {
+    std::vector<std::shared_ptr<Block>> layers;
+    JoinMode mode;
+
     Join(std::initializer_list<std::shared_ptr<Block>> list, JoinMode m = JoinMode::SUM) 
-        : Block("Join"), layers(list) {}
+        : Block("Join"), layers(list), mode(m) {}
 
     // Constructor with vector ( friendly)
     Join(const std::vector<std::shared_ptr<Block>>& list, JoinMode m = JoinMode::SUM)
@@ -85,7 +87,7 @@ struct Join : public Block {
         if(mode == JoinMode::SUM) {
             auto accum = inputs[0];
             for(size_t i = 1; i < inputs.size() ; i++){
-                accum = accum + accum[i];
+                accum = accum + inputs[i];
 
             }
 

@@ -38,8 +38,12 @@ void SGD::step() {
 }
 
 Adam::Adam(const std::vector<std::shared_ptr<Tensor>>& params, float learning_rate,
-float beta1, float beta2, float epsilon = 1e-8) : Optimizer(params), beta1(beta1), beta2(beta2),
-epsilon(epsilon) {};
+float beta1, float beta2, float epsilon) : Optimizer(params), beta1(beta1), beta2(beta2),
+epsilon(epsilon), lr(learning_rate) {
+    // Pre-allocate history vectors
+    m_history.resize(parameters.size());
+    v_history.resize(parameters.size());
+};
 
 
 void Adam::step() {

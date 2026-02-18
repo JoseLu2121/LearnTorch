@@ -13,5 +13,5 @@ struct TensorInfo {
 // Enum definitions for operations
 enum class BinaryOp {ADD, SUB, MUL, DIV, POW};
 enum class UnaryOp {RELU, SIGMOID, TANH, EXP, LOG, NEG};
-enum class ReduceOp {SUM, MEAN, MAX, MIN};
+enum class ReduceOp {SUM, MEAN, MAX, MIN, ARGMAX};
 enum class JoinMode {SUM,CONCAT};
