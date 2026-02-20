@@ -55,5 +55,21 @@ int main() {
 
     trainer->fit(inputs,targets,200);
 
+    model->save_weights("model_weights");
+
+
+    auto linear3 = make_shared<Linear>(2, 4);
+    auto relu2 = make_shared<ReLU>();
+    auto linear4 = make_shared<Linear>(4, 2);
+    auto softmax2 = make_shared<Softmax>();
+    auto model2 = std::make_shared<Serial>(std::vector<std::shared_ptr<Block>>{linear, relu, linear2, softmax});
+    auto adam2 = make_shared<Adam>(model->parameters(),0.01f,0.9f,0.999f,1e-8f);
+    auto sgd2 = make_shared<SGD>(model->parameters(),0.01f);
+    
+    model2->load_weights("model_weights");
+
+    TensorList outputs = model2->forward({inputs});
+    auto prediction = outputs[0];
+    prediction->printElements(12);
     return 0;
 }

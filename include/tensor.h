@@ -102,4 +102,8 @@ public:
                 std::vector<std::shared_ptr<Tensor>>& topo,
                 std::unordered_set<Tensor*>& visited);
 
+    void serialize(std::ofstream& out) const;
+
+    void deserialize(std::ifstream& in);
+
 };

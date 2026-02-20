@@ -3,6 +3,9 @@
 #include "types.h"
 #include "device.h"
 #include "backend.h"
+#include <fstream>
+#include <stdexcept>
+
 using namespace std;
 
 // ====================
@@ -317,4 +320,36 @@ void Tensor::backward() {
         }
     }
 }
+
+// ===================
+// Load and save weights
+// ===================
+
+void Tensor::serialize(std::ofstream& out) const {
+    size_t dim = this->shape.size();
+    out.write(reinterpret_cast<const char*>(&dim), sizeof(size_t));
+    out.write(reinterpret_cast<const char*>(this->shape.data()), dim * sizeof(int));
+    out.write(reinterpret_cast<const char*>(this->getData()), this->total_size * sizeof(float));
+
+}
+
+void Tensor::deserialize(std::ifstream& in)  {
+    size_t dim;
+    in.read(reinterpret_cast<char*>(&dim), sizeof(size_t));
+
+    this->shape.resize(dim);
+    in.read(reinterpret_cast<char*>(shape.data()), dim * sizeof(int));
+
+    size_t total_elements = 1;
+    for(int dim : this->shape) {
+        total_elements *= dim;
+    }
+
+    this->data.reset(new float[total_elements]);
+    in.read(reinterpret_cast<char*>(this->getData()), total_elements * sizeof(float));
+
+
+}
+
+
 

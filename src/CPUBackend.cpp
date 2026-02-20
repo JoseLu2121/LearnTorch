@@ -36,13 +36,9 @@ void CPUBackend::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& ou
     const float* a_data = a.data;
     const float* b_data = b.data;
 
-    // Since we handle broadcasting via strides in the Tensor class (views),
     // we just need to iterate index-by-index mapping to coordinates.
-    // NOTE: If a and b are broadcasted views, getIndex will handle the 0-strides correctly.
-
     for(size_t i = 0; i < out_size; i++){ 
         
-        // Map linear index 'i' (of output) to offsets in a and b
         int a_index = getIndex(i, a);
         int b_index = getIndex(i, b);
         
@@ -139,7 +135,6 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
         int current_idx = i;
         int in_offset_base = 0;
 
-        
         for (int d = out.dim - 1; d >= 0; --d) {
             int coord = current_idx % out.shape[d];
             current_idx /= out.shape[d];
@@ -159,7 +154,7 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
         // we prefer adding the first value of the dimension as the default 
         if (reduction_size > 0 && op == ReduceOp::MAX) acc = in.data[in_offset_base]; 
         if (reduction_size > 0 && op == ReduceOp::MIN) acc = in.data[in_offset_base];
-        if (op == ReduceOp::ARGMAX) max_val = in.data[in_offset_base]; // Inicialización segura
+        if (op == ReduceOp::ARGMAX) max_val = in.data[in_offset_base];
 
         // the stride of the dimension we reduce
         int stride_dim = in.strides[dim];
@@ -171,8 +166,8 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
                 case ReduceOp::MAX: if (val > acc) acc = val; break;
                 case ReduceOp::MIN: if (val < acc) acc = val; break;
                 case ReduceOp::ARGMAX: if (val > max_val) {
-                        max_val = val; // Actualizamos el récord del número más grande
-                        best_idx = j;  // Guardamos su posición relativa (la clase)
+                        max_val = val;
+                        best_idx = j;
                     }
                     break;
                 default: break;
