@@ -262,6 +262,31 @@ shared_ptr<Tensor> Tensor::compute_reduce_op(int dim, ReduceOp op) {
 
 }
 
+shared_ptr<Tensor> Tensor::compute_gather(shared_ptr<Tensor> ind) {
+    auto out_shape = ind->shape;
+    out_shape.push_back(this->shape.back());
+
+    auto out = std::make_shared<Tensor>(out_shape);
+    TensorInfo i_w = this->getInfo();
+    TensorInfo i_ind = ind->getInfo();
+    TensorInfo i_out = out->getInfo();
+
+    Device::get()->gather(i_w,i_ind,i_out);
+
+    return out;
+
+}
+
+void Tensor::compute_scatter_add(shared_ptr<Tensor> ind, shared_ptr<Tensor> incoming_grad) {
+    TensorInfo i_w_grad = this->getInfo();
+    TensorInfo i_ind = ind->getInfo();
+    TensorInfo i_grad_out = incoming_grad->getInfo();
+
+    Device::get()->scatter_add(i_ind, i_grad_out, i_w_grad);
+
+
+}
+
 // ===================
 // Tensor initializers
 // ===================
