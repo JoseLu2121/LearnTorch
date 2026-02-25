@@ -23,6 +23,10 @@ public:
     virtual void gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) = 0;
 
     virtual void accumulate_grad(std::shared_ptr<Tensor> param, std::shared_ptr<Tensor> incoming_grad) = 0;
+
+    virtual void gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out) = 0;
+    virtual void scatter_add(const TensorInfo& indexes, const TensorInfo& incoming_grad, const TensorInfo& w_grad) = 0;
+
 };
 
 
@@ -41,5 +45,28 @@ struct CPUBackend : public Backend {
     void gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) override;
 
     void accumulate_grad(std::shared_ptr<Tensor> param, std::shared_ptr<Tensor> incoming_grad) override;
+    void gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out);
+    void scatter_add(const TensorInfo& indexes, const TensorInfo& incoming_grad, const TensorInfo& w_grad);
+
+};
+
+
+struct CPUBackendOptimized : public Backend {
+
+    CPUBackendOptimized() = default;
+
+    float* alloc(size_t size) override;
+    void free(float* ptr) override;
+    void set(float* ptr, float value, size_t size) override;
+
+    void binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op) override;
+    void unary(const TensorInfo& a, TensorInfo& out, UnaryOp op) override;    
+    // Missing overrides
+    void reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) override;
+    void gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) override;
+
+    void accumulate_grad(std::shared_ptr<Tensor> param, std::shared_ptr<Tensor> incoming_grad) override;
+    void gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out);
+    void scatter_add(const TensorInfo& indexes, const TensorInfo& incoming_grad, const TensorInfo& w_grad);
 
 };

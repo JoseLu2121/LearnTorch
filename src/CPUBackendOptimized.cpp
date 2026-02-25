@@ -27,7 +27,7 @@ inline int getIndex(int index, const TensorInfo& tensor){
 
 
 // A basic binary operation of two tensors
-void CPUBackend::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op){
+void CPUBackendOptimized::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op){
 
     size_t out_size = out.size;
     
@@ -37,6 +37,7 @@ void CPUBackend::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& ou
     const float* b_data = b.data;
 
     // we just need to iterate index-by-index mapping to coordinates.
+    #pragma omp parallel for
     for(size_t i = 0; i < out_size; i++){ 
         
         int a_index = getIndex(i, a);
@@ -63,8 +64,8 @@ void CPUBackend::binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& ou
 };
 
 // A basic unary operation of a tensor
-void CPUBackend::unary(const TensorInfo& a, TensorInfo& out, UnaryOp op){
-    
+void CPUBackendOptimized::unary(const TensorInfo& a, TensorInfo& out, UnaryOp op){
+    #pragma omp parallel for
     for(size_t i = 0; i < out.size; i++){
 
         int a_index = getIndex(i,a);
@@ -90,27 +91,31 @@ void CPUBackend::unary(const TensorInfo& a, TensorInfo& out, UnaryOp op){
 
 
 
-void CPUBackend::gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) {
+void CPUBackendOptimized::gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) {
     auto n_batch = out.shape[0];
     auto M = out.shape[1];
     auto N = out.shape[2];
     auto K = a.shape[2];
 
+    auto a_col_strides = a.strides[2];
+    auto b_row_strides = b.strides[1];
+    auto a_row_strides = a.strides[1];
+    auto b_col_strides = b.strides[2];
     // We iterate per batch 
     for(int b_idx = 0; b_idx < n_batch; b_idx++){
         const float* batch_a = a.data + b_idx * a.strides[0];
         const float* batch_b = b.data + b_idx * b.strides[0];
         float* batch_out = out.data + b_idx * out.strides[0];
-
+        #pragma omp parallel for collapse(2)
         for(int m = 0; m < M; m++){
             for(int n = 0; n < N; n++){
                 float sum = 0.0f;
-                const float* row_a = batch_a + m * a.strides[1];
-                const float* col_b = batch_b + n * b.strides[2];
+                const float* row_a = batch_a + m * a_row_strides;
+                const float* col_b = batch_b + n * b_col_strides;
 
                 for(int k = 0; k<K; k++){
-                    float val_a = row_a[k * a.strides[2]];
-                    float val_b = col_b[k * b.strides[1]];
+                    float val_a = row_a[k * a_col_strides];
+                    float val_b = col_b[k * b_row_strides];
                     sum += val_a * val_b;
                 }
                 batch_out[m * out.strides[1] + n * out.strides[2]] = sum;
@@ -120,17 +125,18 @@ void CPUBackend::gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out)
     }
 }
 
-float* CPUBackend::alloc(size_t size) { return new float[size]; }
-void CPUBackend::free(float* ptr) { delete[] ptr; }
-void CPUBackend::set(float* ptr, float value, size_t size) { 
+float* CPUBackendOptimized::alloc(size_t size) { return new float[size]; }
+void CPUBackendOptimized::free(float* ptr) { delete[] ptr; }
+void CPUBackendOptimized::set(float* ptr, float value, size_t size) { 
    for(size_t i=0; i<size; i++) ptr[i] = value;
 }
 
-void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) {
+void CPUBackendOptimized::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) {
  
     size_t out_size = out.size;
     int reduction_size = in.shape[dim]; // number of elements to reduce
     
+    #pragma omp parallel for
     for (size_t i = 0; i < out_size; i++) {
         
         int current_idx = i;
@@ -188,7 +194,7 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
 
 
 // Unbroadcast function to accumulate gradients correctly
-void CPUBackend::accumulate_grad(shared_ptr<Tensor> param, shared_ptr<Tensor> incoming_grad) {
+void CPUBackendOptimized::accumulate_grad(shared_ptr<Tensor> param, shared_ptr<Tensor> incoming_grad) {
 
     float* p_data = param->grad->getData(); // Buffer to accumulate gradients
     float* g_data = incoming_grad->getData(); // Incoming gradient data that needs to be unbroadcasted
@@ -230,18 +236,18 @@ void CPUBackend::accumulate_grad(shared_ptr<Tensor> param, shared_ptr<Tensor> in
 }
 
 // Acts like a look up table
-void CPUBackend::gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out) {
+void CPUBackendOptimized::gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out) {
     int embed_dim = w.shape[w.dim - 1];
-    int vocab_size = w.shape[0]; // El límite real es el tamaño del vocabulario
+    int vocab_size = w.shape[0]; 
 
-    int w_stride_row = w.strides[0]; // Stride de la fila (generalmente embed_dim)
+    int w_stride_row = w.strides[0];
     int w_stride_col = w.strides[w.dim - 1];
 
+    #pragma omp parallel for
     for(size_t i = 0; i < indexes.size; i++) {
         int idx = getIndex(i, indexes);
         int token_id = static_cast<int>(indexes.data[idx]);
 
-        // PROTECCIÓN: Solo operamos si el token está en el rango [0, vocab_size)
         if(token_id >= 0 && token_id < vocab_size) {
             float* out_row = out.data + (i * embed_dim);
 
@@ -250,27 +256,26 @@ void CPUBackend::gather(const TensorInfo& w, const TensorInfo& indexes, TensorIn
                 out_row[d] = w.data[w_offset];
             }
         }
-        // Si no es válido, out_row se queda en 0 (ya inicializado por el constructor)
     }
 }
 
-void CPUBackend::scatter_add(const TensorInfo& indexes, const TensorInfo& incoming_grad, const TensorInfo& w_grad) {
+void CPUBackendOptimized::scatter_add(const TensorInfo& indexes, const TensorInfo& incoming_grad, const TensorInfo& w_grad) {
     int embed_dim = w_grad.shape[w_grad.dim - 1];
     int vocab_size = w_grad.shape[0];
 
     int w_stride_row = w_grad.strides[0];
     int w_stride_col = w_grad.strides[w_grad.dim - 1];
-
+    #pragma omp parallel for
     for(size_t i = 0; i < indexes.size; i++) {
         int idx = getIndex(i, indexes);
         int token_id = static_cast<int>(indexes.data[idx]);
 
-        // PROTECCIÓN CRÍTICA: Evita escribir fuera de los pesos del embedding
         if(token_id >= 0 && token_id < vocab_size) {
             const float* grad_row = incoming_grad.data + (i * embed_dim);
 
             for(int d = 0; d < embed_dim; d++) {
                 int w_offset = (token_id * w_stride_row) + (d * w_stride_col);
+                #pragma omp atomic
                 w_grad.data[w_offset] += grad_row[d];
             }
         }

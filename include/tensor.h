@@ -106,4 +106,9 @@ public:
 
     void deserialize(std::ifstream& in);
 
+    std::shared_ptr<Tensor> compute_gather(std::shared_ptr<Tensor> ind);
+    void compute_scatter_add(std::shared_ptr<Tensor> ind, std::shared_ptr<Tensor> incoming_grad);
+
+
+
 };

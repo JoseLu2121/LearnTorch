@@ -71,15 +71,10 @@ struct Parallel : public Block {
 
 
 struct Join : public Block {
-    std::vector<std::shared_ptr<Block>> layers;
     JoinMode mode;
 
-    Join(std::initializer_list<std::shared_ptr<Block>> list, JoinMode m = JoinMode::SUM) 
-        : Block("Join"), layers(list), mode(m) {}
-
-    // Constructor with vector ( friendly)
-    Join(const std::vector<std::shared_ptr<Block>>& list, JoinMode m = JoinMode::SUM)
-        : Block("Join"), layers(list) {}
+    Join(JoinMode m = JoinMode::SUM) 
+        : Block("Join"), mode(m) {}
 
     TensorList forward(TensorList inputs) override {
         if (inputs.empty()) return {};
@@ -94,17 +89,14 @@ struct Join : public Block {
             return { accum };
         }
 
+        return {inputs[0]};
+
     }
 
-    // Paremeters: we concatenate the parameters of each layer
-    TensorList parameters() override {
-        TensorList params;
-        for (auto& layer : layers) {
-            auto child_params = layer->parameters();
-            // .insert() concatenates vectors
-            params.insert(params.end(), child_params.begin(), child_params.end());
-        }
-        return params;
-    }
+};
 
+
+struct Identity : public Block {
+    Identity() : Block("Identity") {}
+    TensorList forward(TensorList inputs) override { return inputs; }
 };

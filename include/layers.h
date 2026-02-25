@@ -119,10 +119,140 @@ struct Softmax: public Block {
         
         auto exp_x = exp(x_shifted);
         auto sum_exp_x = sum(exp_x, axis);
-        auto out = exp_x / sum_exp_x;
+        auto out = exp_x / (sum_exp_x + 1e-7f);
 
         return { out };
     }
 
 
+};
+
+// Embedding Layer
+struct Embedding: public Block {
+    TensorPtr W;
+
+    Embedding(int vocab_size, int vector_size) : Block("Embedding") {
+        W = Tensor::random({vocab_size,vector_size}, -0.01f, 0.01f);
+    };
+
+    TensorList forward(TensorList inputs) override {
+
+        if (inputs.size() != 1) {
+            throw std::runtime_error("Embedding expects only one input.");
+        }
+
+        auto out = gather(W,inputs[0]);
+
+        return {out};
+
+    }
+
+    // Parameters function (we add Weights and Bias)
+    std::vector<TensorPtr> parameters() override {
+        return {W};
+    }
+
+
+};
+
+// LayerNorm Layer
+struct LayerNorm: public Block {
+    TensorPtr gamma;
+    TensorPtr beta;
+    float epsilon;
+
+    LayerNorm(int embed_dim, float epsilon = 1e-5f): Block("LayerNorm"), epsilon(epsilon) {
+        gamma = Tensor::ones({1, 1, embed_dim});
+        beta = Tensor::zeros({1, 1, embed_dim});
+    };
+
+    TensorList forward(TensorList inputs) override {
+        if (inputs.size() != 1) {
+            throw std::runtime_error("LayerNorm expects exactly one input");
+        }
+
+        auto X = inputs[0];
+
+        int axis = X->shape.size() - 1;
+        float d = static_cast<float>(X->shape[axis]);
+
+        auto mean = sum(X, axis) / d;
+
+        auto x_centered = X - mean;
+        auto variance = sum(x_centered * x_centered, axis) / d;
+        auto desv = sqrt(variance + epsilon);
+
+        auto x_norm = x_centered / desv;
+
+        auto Y = (x_norm * gamma) + beta;
+
+        return {Y};
+    }
+
+    std::vector<TensorPtr> parameters() override {
+        return {gamma, beta};
+    }
+
+};
+
+
+struct SelfAttention : public Block {
+    std::shared_ptr<Linear> q_proj, k_proj, v_proj, out_proj;
+    std::shared_ptr<Softmax> softmax_layer; // Tu propia capa
+    int embed_dim;
+
+    SelfAttention(int dim) : Block("SelfAttention"), embed_dim(dim) {
+        q_proj = std::make_shared<Linear>(dim, dim);
+        k_proj = std::make_shared<Linear>(dim, dim);
+        v_proj = std::make_shared<Linear>(dim, dim);
+        out_proj = std::make_shared<Linear>(dim, dim);
+        
+        softmax_layer = std::make_shared<Softmax>(); // Inicializamos el bloque
+    }
+
+    TensorList forward(TensorList inputs) override {
+        auto X = inputs[0];
+        int batch_size = X->shape[0];
+        int seq_len = X->shape[1];
+
+        // Proyecciones
+        auto Q = q_proj->forward({X})[0];
+        auto K = k_proj->forward({X})[0];
+        auto V = v_proj->forward({X})[0];
+
+        auto K_T = transpose_view(K); 
+        auto scores = matmul(Q, K_T);
+
+        // Escalar
+        float scale = std::sqrt(static_cast<float>(embed_dim));
+        auto scaled_scores = scores / scale;
+
+        // Máscara Causal
+        auto mask = Tensor::zeros({batch_size, seq_len, seq_len});
+        float* mask_ptr = mask->getData(); // O mask->data
+        for (int b = 0; b < batch_size; ++b) {
+            for (int r = 0; r < seq_len; ++r) {
+                for (int c = r + 1; c < seq_len; ++c) {
+                    mask_ptr[b * (seq_len * seq_len) + r * seq_len + c] = -1e9f;
+                }
+            }
+        }
+
+        auto masked_scores = scaled_scores + mask;
+        
+        auto probs = softmax_layer->forward({masked_scores})[0];
+        
+        auto context = matmul(probs, V);
+        
+        return out_proj->forward({context});
+    }
+
+    std::vector<TensorPtr> parameters() override {
+        std::vector<TensorPtr> p;
+        for(auto l : {q_proj, k_proj, v_proj, out_proj}) {
+            auto lp = l->parameters();
+            p.insert(p.end(), lp.begin(), lp.end());
+        }
+        return p;
+    }
 };
