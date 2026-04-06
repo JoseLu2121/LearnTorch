@@ -95,7 +95,6 @@ void CPUBackend::gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out)
     auto M = out.shape[1];
     auto N = out.shape[2];
     auto K = a.shape[2];
-
     // We iterate per batch 
     for(int b_idx = 0; b_idx < n_batch; b_idx++){
         const float* batch_a = a.data + b_idx * a.strides[0];
@@ -118,6 +117,8 @@ void CPUBackend::gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out)
 
         }
     }
+
+
 }
 
 float* CPUBackend::alloc(size_t size) { return new float[size]; }
@@ -185,8 +186,6 @@ void CPUBackend::reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp
     }
 }
 
-
-
 // Unbroadcast function to accumulate gradients correctly
 void CPUBackend::accumulate_grad(shared_ptr<Tensor> param, shared_ptr<Tensor> incoming_grad) {
 
@@ -232,16 +231,15 @@ void CPUBackend::accumulate_grad(shared_ptr<Tensor> param, shared_ptr<Tensor> in
 // Acts like a look up table
 void CPUBackend::gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out) {
     int embed_dim = w.shape[w.dim - 1];
-    int vocab_size = w.shape[0]; // El límite real es el tamaño del vocabulario
+    int vocab_size = w.shape[0];
 
-    int w_stride_row = w.strides[0]; // Stride de la fila (generalmente embed_dim)
+    int w_stride_row = w.strides[0];
     int w_stride_col = w.strides[w.dim - 1];
 
     for(size_t i = 0; i < indexes.size; i++) {
         int idx = getIndex(i, indexes);
         int token_id = static_cast<int>(indexes.data[idx]);
 
-        // PROTECCIÓN: Solo operamos si el token está en el rango [0, vocab_size)
         if(token_id >= 0 && token_id < vocab_size) {
             float* out_row = out.data + (i * embed_dim);
 
@@ -250,7 +248,6 @@ void CPUBackend::gather(const TensorInfo& w, const TensorInfo& indexes, TensorIn
                 out_row[d] = w.data[w_offset];
             }
         }
-        // Si no es válido, out_row se queda en 0 (ya inicializado por el constructor)
     }
 }
 
@@ -265,7 +262,6 @@ void CPUBackend::scatter_add(const TensorInfo& indexes, const TensorInfo& incomi
         int idx = getIndex(i, indexes);
         int token_id = static_cast<int>(indexes.data[idx]);
 
-        // PROTECCIÓN CRÍTICA: Evita escribir fuera de los pesos del embedding
         if(token_id >= 0 && token_id < vocab_size) {
             const float* grad_row = incoming_grad.data + (i * embed_dim);
 
@@ -275,4 +271,54 @@ void CPUBackend::scatter_add(const TensorInfo& indexes, const TensorInfo& incomi
             }
         }
     }
+}
+
+
+void convolution_kernel(
+    const TensorInfo& input,
+    const TensorInfo& w,
+    const TensorInfo& b,
+    TensorInfo& out,
+    int stride,
+    int padding) {
+
+    if (input.dim != 4 || w.dim != 4 || out.dim != 4) {
+        throw std::runtime_error("convolution_kernel expects 4D tensors");
+    }
+
+    const int n_batch = input.shape[0];
+    const int c_in = input.shape[1];
+    const int h_in = input.shape[2];
+    const int w_in = input.shape[3];
+
+    const int c_out = w.shape[0];
+    const int c_w = w.shape[1];
+    const int k_h = w.shape[2];
+    const int k_w = w.shape[3];
+
+    const int h_out = out.shape[2];
+    const int w_out = out.shape[3];
+
+    if (c_in != c_w) {
+        throw std::runtime_error("convolution_kernel channel mismatch between input and weights");
+    }
+    if (out.shape[0] != n_batch || out.shape[1] != c_out) {
+        throw std::runtime_error("convolution_kernel output shape does not match N/C_out");
+    }
+    if (b.dim != 1 || b.shape[0] != c_out) {
+        throw std::runtime_error("convolution_kernel bias must have shape [C_out]");
+    }
+
+    if (stride <= 0) {
+        throw std::runtime_error("convolution_kernel expects stride > 0");
+    }
+    if (padding < 0) {
+        throw std::runtime_error("convolution_kernel expects padding >= 0");
+    }
+
+    if (h_out != ((h_in + 2 * padding - k_h) / stride + 1) ||
+        w_out != ((w_in + 2 * padding - k_w) / stride + 1)) {
+        throw std::runtime_error("convolution_kernel output shape is inconsistent with stride/padding");
+    }
+
 }

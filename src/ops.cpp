@@ -32,33 +32,9 @@ shared_ptr<Tensor> operator+(shared_ptr<Tensor> a, shared_ptr<Tensor> b) {
 }
 
 shared_ptr<Tensor> matmul(shared_ptr<Tensor> a, shared_ptr<Tensor> b, bool require_grad) {
-    auto a_view = a->view_to_gemm(false);
-    auto b_view = b->view_to_gemm(true);
-    int batch_out = std::max(a_view->shape[0], b_view->shape[0]);
-    
-    std::vector<int> out_shape;
-    if (a->shape.size() == 2 && b->shape.size() == 2) {
-        out_shape = {a_view->shape[1], b_view->shape[2]};
-    } else {
-        out_shape = {batch_out, a_view->shape[1], b_view->shape[2]};
-    }
 
-    auto out = std::make_shared<Tensor>(out_shape);
+    auto out = a->compute_matmul(b);
     out->parents = {a, b}; 
-
-    shared_ptr<Tensor> out_view;
-    if (out_shape.size() == 2) {
-       out_view = out->view_to_gemm(false); 
-    } else {
-       out_view = out; 
-    }
-
-    TensorInfo i_a = a_view.get()->getInfo();
-    TensorInfo i_b = b_view.get()->getInfo();
-    TensorInfo i_out = out_view.get()->getInfo();
-    
-    static CPUBackend backend;
-    backend.gemm(i_a,i_b, i_out);
 
     Tensor* raw_out = out.get();
 
@@ -468,3 +444,87 @@ shared_ptr<Tensor> gather(shared_ptr<Tensor> w, shared_ptr<Tensor> ind) {
 
     return out;
 }
+
+std::shared_ptr<Tensor> conv2d(std::shared_ptr<Tensor>  input, std::shared_ptr<Tensor>  w, int stride, int padding) {
+        auto out = input->compute_conv2d(w,stride,padding);
+        out->parents = {input, w};
+        Tensor* raw_out = out.get();
+
+
+        out->_backward = [input, w, raw_out, stride, padding]() {
+            if (!input->grad) input->grad = Tensor::zeros(input->shape);
+            if (!w->grad) w->grad = Tensor::zeros(w->shape);
+
+            int n_batch = input->shape[0];
+            int c_in = input->shape[1];
+            int h_in = input->shape[2];
+            int w_in = input->shape[3];
+
+            int c_out = w->shape[0];
+            int k_h = w->shape[2];
+            int k_w = w->shape[3];
+
+            int h_out = raw_out->shape[2];
+            int w_out = raw_out->shape[3];
+
+            int workspace_size = c_in * k_h * k_w * h_out * w_out;
+            float* col_buffer = new float[workspace_size];
+            
+            std::vector<float> w_data(w->getData(), w->getData() + w->getSize());
+            auto w_2d = std::make_shared<Tensor>(std::vector<int>{c_out, c_in * k_h * k_w}, w_data);
+            auto w_T = transpose_view(w_2d);
+            cout << "Entramos backward conv2d" << endl;
+            for(int b = 0; b < n_batch; b++) {
+                auto x_b = input->batch_view(b, true);
+                auto dY_b = raw_out->grad->batch_view(b, true);
+                auto dx_b = input->grad->batch_view(b,true);
+
+                std::vector<float> dy_data(dY_b->getData(), dY_b->getData() + dY_b->getSize());
+                auto dY_b_2d = std::make_shared<Tensor>(std::vector<int>{c_out, h_out * w_out}, dy_data);
+
+                x_b->im2col(col_buffer, h_out, w_out, k_h, k_w, stride, padding);
+
+                std::vector<float> col_data(col_buffer, col_buffer + workspace_size);
+                auto X_col = std::make_shared<Tensor>(std::vector<int>{c_in * k_h * k_w, h_out * w_out}, col_data);
+                X_col->strides = {1, c_in * k_h * k_w};
+
+                auto X_col_T = transpose_view(X_col);
+                auto dW_b = matmul(dY_b_2d, X_col_T, false);
+
+                dW_b->shape = w->shape;
+                dW_b->strides = w->strides;
+                Device::get()->accumulate_grad(w, dW_b);
+
+                auto dX_col = matmul(w_T, dY_b_2d, false);
+                dx_b->col2im(dX_col->getData(), h_out, w_out, k_h, k_w, stride, padding);
+            }
+            
+            delete[] col_buffer;
+            cout << "Salimos backward conv2d" << endl;
+        };
+
+        return out;
+
+    }
+
+shared_ptr<Tensor> flatten(shared_ptr<Tensor> a) {
+    auto out = a->compute_flatten();
+    
+    out->parents = {a};
+    Tensor* raw_out = out.get();
+    
+    out->_backward = [a, raw_out]() {
+        if (!a->grad) a->grad = Tensor::zeros(a->shape);
+        
+        float* grad_in = a->grad->getData();
+        float* grad_out = raw_out->grad->getData();
+        
+        for (size_t i = 0; i < a->getSize(); i++) {
+            grad_in[i] += grad_out[i];
+        }
+    };
+    
+    return out;
+}
+
+

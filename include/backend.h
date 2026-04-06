@@ -40,14 +40,12 @@ struct CPUBackend : public Backend {
 
     void binary(const TensorInfo& a, const TensorInfo& b, TensorInfo& out, BinaryOp op) override;
     void unary(const TensorInfo& a, TensorInfo& out, UnaryOp op) override;    
-    // Missing overrides
     void reduce(const TensorInfo& in, TensorInfo& out, int dim, ReduceOp op) override;
     void gemm(const TensorInfo& a, const TensorInfo& b, TensorInfo& out) override;
 
     void accumulate_grad(std::shared_ptr<Tensor> param, std::shared_ptr<Tensor> incoming_grad) override;
     void gather(const TensorInfo& w, const TensorInfo& indexes, TensorInfo& out);
     void scatter_add(const TensorInfo& indexes, const TensorInfo& incoming_grad, const TensorInfo& w_grad);
-
 };
 
 

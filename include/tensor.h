@@ -64,6 +64,12 @@ public:
     // Get the parents of the tensor
     std::vector<std::shared_ptr<Tensor>> getParents() const { return parents; }
     int getDimension() const { return shape.size(); }
+    
+    // Reshape a tensor
+    void reshape(const std::vector<int>& shape);
+
+    // Construct a batch view
+    std::shared_ptr<Tensor> batch_view(int index, bool keep_dim);
 
     // Build a 3D view of a tensor
     std::shared_ptr<Tensor> view_to_3d(); 
@@ -86,8 +92,14 @@ public:
     // Compute a unary operation
     std::shared_ptr<Tensor> compute_unary_op(UnaryOp op);
 
+    // Compute matmul
+    std::shared_ptr<Tensor> compute_matmul(std::shared_ptr<Tensor> b);
+
     // Compute a reduce operation
     std::shared_ptr<Tensor> compute_reduce_op(int dim, ReduceOp op);
+
+    // Compute a flatten operation
+    std::shared_ptr<Tensor> compute_flatten();
 
     // Static methods to create special tensors
     static std::shared_ptr<Tensor> zeros(const std::vector<int>& shape); // All elements are 0
@@ -108,7 +120,10 @@ public:
 
     std::shared_ptr<Tensor> compute_gather(std::shared_ptr<Tensor> ind);
     void compute_scatter_add(std::shared_ptr<Tensor> ind, std::shared_ptr<Tensor> incoming_grad);
+    
+    std::shared_ptr<Tensor> compute_conv2d(std::shared_ptr<Tensor>  w, int stride, int padding);
 
+    void im2col(float* workspace, int out_height, int out_width, int kernel_height, int kernel_width, int stride, int padding);
 
-
+    void col2im (const float* data_col, int out_height, int out_width, int kernel_height, int kernel_width, int stride, int padding);
 };

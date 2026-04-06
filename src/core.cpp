@@ -20,9 +20,9 @@ public:
     std::function<void()> backward;
 
     Unit(double d, const vector<shared_ptr<Unit>>& c = {}, const string& l = "") 
-    : data(d), children(c), label(l), grad(0.0), backward([](){})  // inicializa data y children directamente
+    : data(d), children(c), label(l), grad(0.0), backward([](){})
     {
-        children.reserve(2);   // reserva capacidad para 2 elementos
+        children.reserve(2);
 
     }
 

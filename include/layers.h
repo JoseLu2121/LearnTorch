@@ -80,6 +80,54 @@ struct Sigmoid: public Block {
 
 };
 
+struct Conv2D: public Block {
+    TensorPtr W;
+    TensorPtr B;
+    int stride;
+    int padding;
+    
+    Conv2D(int in_channels, int out_channels, int
+        kernel_size, int stride, int padding)
+        : Block("Conv2D"), stride(stride), padding(padding) {
+        
+        W = Tensor::random({out_channels,in_channels,kernel_size,kernel_size});
+        B = Tensor::zeros({out_channels});
+            
+    };
+
+    TensorList forward(TensorList inputs) override {
+        if (inputs.size() != 1) {
+               throw std::runtime_error("Conv2D waits one input, it received " + std::to_string(inputs.size()));
+        };
+
+        auto X = inputs[0];
+
+        auto Y = conv2d(X, W, stride, padding) + B;
+
+        return {Y};
+    }
+
+    // Parameters function (we add Weights and Bias)
+    std::vector<TensorPtr> parameters() override {
+        return {W, B};
+    }
+};
+
+// Flatten layer
+class Flatten : public Block {
+public:
+    Flatten() : Block("Flatten") {};
+
+    TensorList forward(TensorList inputs) override {
+        auto out = flatten(inputs[0]);
+        return {out};
+    }
+
+    TensorList parameters() override {
+        return {}; 
+    }
+};
+
 // Tanh Layer
 struct Tanh: public Block {
     // Constructor
@@ -144,14 +192,12 @@ struct Embedding: public Block {
         auto out = gather(W,inputs[0]);
 
         return {out};
-
     }
 
     // Parameters function (we add Weights and Bias)
     std::vector<TensorPtr> parameters() override {
         return {W};
     }
-
 
 };
 
@@ -198,7 +244,7 @@ struct LayerNorm: public Block {
 
 struct SelfAttention : public Block {
     std::shared_ptr<Linear> q_proj, k_proj, v_proj, out_proj;
-    std::shared_ptr<Softmax> softmax_layer; // Tu propia capa
+    std::shared_ptr<Softmax> softmax_layer;
     int embed_dim;
 
     SelfAttention(int dim) : Block("SelfAttention"), embed_dim(dim) {
@@ -207,7 +253,7 @@ struct SelfAttention : public Block {
         v_proj = std::make_shared<Linear>(dim, dim);
         out_proj = std::make_shared<Linear>(dim, dim);
         
-        softmax_layer = std::make_shared<Softmax>(); // Inicializamos el bloque
+        softmax_layer = std::make_shared<Softmax>();
     }
 
     TensorList forward(TensorList inputs) override {
@@ -215,7 +261,6 @@ struct SelfAttention : public Block {
         int batch_size = X->shape[0];
         int seq_len = X->shape[1];
 
-        // Proyecciones
         auto Q = q_proj->forward({X})[0];
         auto K = k_proj->forward({X})[0];
         auto V = v_proj->forward({X})[0];
@@ -223,11 +268,9 @@ struct SelfAttention : public Block {
         auto K_T = transpose_view(K); 
         auto scores = matmul(Q, K_T);
 
-        // Escalar
         float scale = std::sqrt(static_cast<float>(embed_dim));
         auto scaled_scores = scores / scale;
 
-        // Máscara Causal
         auto mask = Tensor::zeros({batch_size, seq_len, seq_len});
         float* mask_ptr = mask->getData(); // O mask->data
         for (int b = 0; b < batch_size; ++b) {

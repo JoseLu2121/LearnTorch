@@ -23,3 +23,5 @@ std::shared_ptr<Tensor> tanh(std::shared_ptr<Tensor> a);
 std::shared_ptr<Tensor> exp(std::shared_ptr<Tensor> a);
 std::shared_ptr<Tensor> log(std::shared_ptr<Tensor> a);
 std::shared_ptr<Tensor> gather(std::shared_ptr<Tensor> w, std::shared_ptr<Tensor> ind);
+std::shared_ptr<Tensor> conv2d(std::shared_ptr<Tensor>  input, std::shared_ptr<Tensor>  w, int stride, int padding);
+std::shared_ptr<Tensor> flatten(std::shared_ptr<Tensor> a);

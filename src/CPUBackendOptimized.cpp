@@ -36,10 +36,39 @@ void CPUBackendOptimized::binary(const TensorInfo& a, const TensorInfo& b, Tenso
     const float* a_data = a.data;
     const float* b_data = b.data;
 
+    // optimized way checking if tensors are contiguous
+    if(is_contiguous(a) && is_contiguous(b) && is_contiguous(out)) {
+
+        switch(op)
+            {
+                case BinaryOp::ADD :
+                #pragma omp simd
+                for(size_t i = 0; i < out_size; i++) out_data[i] = a_data[i] + b_data[i]; break;
+
+                case BinaryOp::MUL :
+                #pragma omp simd
+                for(size_t i = 0; i < out_size; i++) out_data[i] = a_data[i] * b_data[i]; break;
+
+                case BinaryOp::SUB :
+                #pragma omp simd
+                for(size_t i = 0; i < out_size; i++) out_data[i] = a_data[i] - b_data[i]; break;
+
+                case BinaryOp::DIV :
+                #pragma omp simd
+                for(size_t i = 0; i < out_size; i++) out_data[i] = a_data[i] / b_data[i]; break;
+
+                case BinaryOp::POW : 
+                #pragma omp simd
+                for(size_t i = 0; i < out_size; i++) out_data[i] = std::pow(a_data[i],b_data[i]); break;
+
+            }
+        return;
+    }
+
+
     // we just need to iterate index-by-index mapping to coordinates.
     #pragma omp parallel for
     for(size_t i = 0; i < out_size; i++){ 
-        
         int a_index = getIndex(i, a);
         int b_index = getIndex(i, b);
         
@@ -51,11 +80,11 @@ void CPUBackendOptimized::binary(const TensorInfo& a, const TensorInfo& b, Tenso
         // Switch for each case of operation
         switch (op)
         {
-        case BinaryOp::ADD : out_val = a_val + b_val; break;
-        case BinaryOp::MUL : out_val = a_val * b_val; break;
-        case BinaryOp::SUB : out_val = a_val - b_val; break;
-        case BinaryOp::DIV : out_val = a_val / b_val; break;
-        case BinaryOp::POW : out_val = std::pow(a_val,b_val); break;
+            case BinaryOp::ADD : out_val = a_val + b_val; break;
+            case BinaryOp::MUL : out_val = a_val * b_val; break;
+            case BinaryOp::SUB : out_val = a_val - b_val; break;
+            case BinaryOp::DIV : out_val = a_val / b_val; break;
+            case BinaryOp::POW : out_val = std::pow(a_val,b_val); break;
         }
         
         out_data[i] = out_val;
@@ -65,6 +94,46 @@ void CPUBackendOptimized::binary(const TensorInfo& a, const TensorInfo& b, Tenso
 
 // A basic unary operation of a tensor
 void CPUBackendOptimized::unary(const TensorInfo& a, TensorInfo& out, UnaryOp op){
+    
+    // Pointers
+    float* out_data = out.data;
+    const float* a_data = a.data;
+
+    // optimized way checking if tensors are contiguous
+    if(is_contiguous(a) && is_contiguous(out)) {
+    switch (op) {
+        case UnaryOp::RELU:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = (a_data[i] > 0.0f) ? a_data[i] : 0.0f;
+            break;
+        case UnaryOp::SIGMOID:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = 1.0f / (1.0f + std::exp(-a_data[i]));
+            break;
+        case UnaryOp::TANH:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = std::tanh(a_data[i]);
+            break;
+        case UnaryOp::EXP:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = std::exp(a_data[i]);
+            break;
+        case UnaryOp::LOG:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = std::log(a_data[i]);
+            break;
+        case UnaryOp::NEG:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = -a_data[i];
+            break;
+        case UnaryOp::SQRT:
+            #pragma omp parallel for simd
+            for(size_t i = 0; i < out.size; i++) out_data[i] = std::sqrt(a_data[i]);
+            break;
+    }
+    return;
+}
+        
     #pragma omp parallel for
     for(size_t i = 0; i < out.size; i++){
 
@@ -97,30 +166,73 @@ void CPUBackendOptimized::gemm(const TensorInfo& a, const TensorInfo& b, TensorI
     auto N = out.shape[2];
     auto K = a.shape[2];
 
+    if (is_contiguous(a) && is_contiguous(b) && is_contiguous(out)) {
+        for(int b_idx = 0; b_idx < n_batch; b_idx++) {
+            const float* batch_a = a.data + b_idx * (M * K);
+            const float* batch_b = b.data + b_idx * (K * N);
+            float* batch_out = out.data + b_idx * (M * N);
+
+            #pragma omp parallel for
+            for(int m = 0; m < M; m++) {
+                for(int n = 0; n < N; n++) {
+                    batch_out[m * N + n] = 0.0f;
+                }
+                
+                for(int k = 0; k < K; k++) {
+                    float val_a = batch_a[m * K + k];
+                
+                    #pragma omp simd
+                    for(int n = 0; n < N; n++) {
+                        batch_out[m * N + n] += val_a * batch_b[k * N + n];
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    // if b is transposed
+    if (is_contiguous(a) && is_contiguous(out) && b.strides[1] == 1 && b.strides[2] == K) {
+        for(int b_idx = 0; b_idx < n_batch; b_idx++) {
+            const float* batch_a = a.data + b_idx * (M * K);
+            const float* batch_b = b.data + b_idx * (K * N);
+            float* batch_out = out.data + b_idx * (M * N);
+
+            #pragma omp parallel for
+            for(int m = 0; m < M; m++) {
+                for(int n = 0; n < N; n++) {
+                    float sum = 0.0f;
+                    #pragma omp simd reduction(+:sum)
+                    for(int k = 0; k < K; k++) {
+                        sum += batch_a[m * K + k] * batch_b[n * K + k];
+                    }
+                    batch_out[m * N + n] = sum;
+                }
+            }
+        }
+        return;
+    }
+
     auto a_col_strides = a.strides[2];
     auto b_row_strides = b.strides[1];
     auto a_row_strides = a.strides[1];
     auto b_col_strides = b.strides[2];
-    // We iterate per batch 
-    for(int b_idx = 0; b_idx < n_batch; b_idx++){
+    
+    for(int b_idx = 0; b_idx < n_batch; b_idx++) {
         const float* batch_a = a.data + b_idx * a.strides[0];
         const float* batch_b = b.data + b_idx * b.strides[0];
         float* batch_out = out.data + b_idx * out.strides[0];
-        #pragma omp parallel for collapse(2)
-        for(int m = 0; m < M; m++){
-            for(int n = 0; n < N; n++){
-                float sum = 0.0f;
-                const float* row_a = batch_a + m * a_row_strides;
-                const float* col_b = batch_b + n * b_col_strides;
 
-                for(int k = 0; k<K; k++){
-                    float val_a = row_a[k * a_col_strides];
-                    float val_b = col_b[k * b_row_strides];
-                    sum += val_a * val_b;
+        #pragma omp parallel for
+        for(int m = 0; m < M; m++) {
+            for(int k = 0; k < K; k++) {
+                float val_a = batch_a[m * a_row_strides + k * a_col_strides];
+                
+                for(int n = 0; n < N; n++) {
+                    float val_b = batch_b[k * b_row_strides + n * b_col_strides];
+                    batch_out[m * out.strides[1] + n * out.strides[2]] += val_a * val_b;
                 }
-                batch_out[m * out.strides[1] + n * out.strides[2]] = sum;
             }
-
         }
     }
 }
@@ -135,6 +247,62 @@ void CPUBackendOptimized::reduce(const TensorInfo& in, TensorInfo& out, int dim,
  
     size_t out_size = out.size;
     int reduction_size = in.shape[dim]; // number of elements to reduce
+
+
+    if (is_contiguous(in) && is_contiguous(out) && dim == in.dim - 1) {
+        switch (op) {
+            case ReduceOp::SUM:
+                #pragma omp parallel for
+                for (size_t i = 0; i < out_size; i++) {
+                    float acc = 0.0f;
+                    const float* in_row = in.data + i * reduction_size;
+                    #pragma omp simd reduction(+:acc)
+                    for (int j = 0; j < reduction_size; j++) acc += in_row[j];
+                    out.data[i] = acc;
+                }
+                break;
+            case ReduceOp::MAX:
+                #pragma omp parallel for
+                for (size_t i = 0; i < out_size; i++) {
+                    const float* in_row = in.data + i * reduction_size;
+                    float acc = reduction_size > 0 ? in_row[0] : -1e9f;
+                    #pragma omp simd reduction(max:acc)
+                    for (int j = 0; j < reduction_size; j++) {
+                        if (in_row[j] > acc) acc = in_row[j];
+                    }
+                    out.data[i] = acc;
+                }
+                break;
+            case ReduceOp::MIN:
+                #pragma omp parallel for
+                for (size_t i = 0; i < out_size; i++) {
+                    const float* in_row = in.data + i * reduction_size;
+                    float acc = reduction_size > 0 ? in_row[0] : 1e9f;
+                    #pragma omp simd reduction(min:acc)
+                    for (int j = 0; j < reduction_size; j++) {
+                        if (in_row[j] < acc) acc = in_row[j];
+                    }
+                    out.data[i] = acc;
+                }
+                break;
+            case ReduceOp::ARGMAX:
+                #pragma omp parallel for
+                for (size_t i = 0; i < out_size; i++) {
+                    const float* in_row = in.data + i * reduction_size;
+                    float max_val = -1e9f;
+                    int best_idx = 0;
+                    for (int j = 0; j < reduction_size; j++) {
+                        if (in_row[j] > max_val) {
+                            max_val = in_row[j];
+                            best_idx = j;
+                        }
+                    }
+                    out.data[i] = (float)best_idx;
+                }
+                break;
+        }
+        return;
+    }
     
     #pragma omp parallel for
     for (size_t i = 0; i < out_size; i++) {
@@ -166,23 +334,32 @@ void CPUBackendOptimized::reduce(const TensorInfo& in, TensorInfo& out, int dim,
         // the stride of the dimension we reduce
         int stride_dim = in.strides[dim];
 
-        for (int j = 0; j < reduction_size; j++) { // iterate per element to reduce
-            float val = in.data[in_offset_base + j * stride_dim];
-            switch (op) {
-                case ReduceOp::SUM: acc += val; break;
-                case ReduceOp::MAX: if (val > acc) acc = val; break;
-                case ReduceOp::MIN: if (val < acc) acc = val; break;
-                case ReduceOp::ARGMAX: if (val > max_val) {
+        switch (op) {
+            case ReduceOp::SUM:
+                for (int j = 0; j < reduction_size; j++) acc += in.data[in_offset_base + j * stride_dim];
+                break;
+            case ReduceOp::MAX:
+                for (int j = 0; j < reduction_size; j++) {
+                    float val = in.data[in_offset_base + j * stride_dim];
+                    if (val > acc) acc = val;
+                }
+                break;
+            case ReduceOp::MIN:
+                for (int j = 0; j < reduction_size; j++) {
+                    float val = in.data[in_offset_base + j * stride_dim];
+                    if (val < acc) acc = val;
+                }
+                break;
+            case ReduceOp::ARGMAX:
+                for (int j = 0; j < reduction_size; j++) {
+                    float val = in.data[in_offset_base + j * stride_dim];
+                    if (val > max_val) {
                         max_val = val;
                         best_idx = j;
                     }
-                    break;
-                default: break;
-            }
-        }
-
-        if (op == ReduceOp::ARGMAX) {
-            acc = (float)best_idx;
+                }
+                acc = (float)best_idx;
+                break;
         }
         
         // set the value in the real memory data index
@@ -281,3 +458,4 @@ void CPUBackendOptimized::scatter_add(const TensorInfo& indexes, const TensorInf
         }
     }
 }
+

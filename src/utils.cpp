@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "tensor.h"
 #include <numeric>
 
 size_t element_vector_product(const std::vector<int>& v) {
@@ -7,4 +8,7 @@ size_t element_vector_product(const std::vector<int>& v) {
     for (int dim : v) total *= dim;
     return total;
 }
+
+
+
 
